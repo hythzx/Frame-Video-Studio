@@ -1,0 +1,28 @@
+services:
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MAX_DURATION_SECONDS=${MAX_DURATION_SECONDS:-3600}
+      - MAX_DOWNLOAD_MB=${MAX_DOWNLOAD_MB:-1024}
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:80"
+    depends_on:
+      - api
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
