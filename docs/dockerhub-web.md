@@ -64,6 +64,13 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
     ports:
       - "127.0.0.1:8080:80"
 ```
