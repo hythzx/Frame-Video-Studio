@@ -8,6 +8,7 @@ services:
       - MAX_DURATION_SECONDS=${MAX_DURATION_SECONDS:-3600}
       - MAX_DOWNLOAD_MB=${MAX_DOWNLOAD_MB:-1024}
       - TWITTER_COOKIES=${TWITTER_COOKIES:-}
+      - BILI_COOKIES=${BILI_COOKIES:-}
     read_only: true
     tmpfs:
       - /tmp:size=2g,mode=1777

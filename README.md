@@ -1,10 +1,11 @@
 # Frame — Twitter Video Downloader
 
-A polished, self-hosted **X / Twitter video downloader** for personal use. Built with Vue 3, FastAPI, yt-dlp and Docker Compose. No database, no accounts, no analytics.
+A polished, self-hosted video downloader for **X / Twitter, YouTube and Bilibili**, for personal use. Built with Vue 3, FastAPI, yt-dlp and Docker Compose. No database, no accounts, no analytics.
 
 ## Features
-- Paste a public X/Twitter post URL; extract title, thumbnail, duration and available video resolutions.
-- Download progressive MP4 formats with both audio and video.
+- Paste a public post/video URL from X/Twitter, YouTube or Bilibili; extract title, thumbnail, duration and available video resolutions.
+- X: download progressive MP4 formats with both audio and video.
+- YouTube / Bilibili: download DASH video+audio streams and merge them into MP4 with ffmpeg.
 - Dark, responsive Chinese-language interface.
 - Temporary server-side downloads; files are deleted after transfer.
 - Strict domain/post URL validation, format allowlist and maximum duration/size settings.
@@ -33,6 +34,7 @@ To expose it through a trusted reverse proxy, change `BIND_ADDRESS` in `.env` to
 | `MAX_DURATION_SECONDS` | `3600` | Maximum allowed video length |
 | `MAX_DOWNLOAD_MB` | `1024` | Approximate download limit |
 | `TWITTER_COOKIES` | *(empty)* | Optional `auth_token=<v>; ct0=<v>` X login cookies; enables restricted/sensitive posts, sent as a header to X |
+| `BILI_COOKIES` | *(empty)* | Optional Bilibili login cookies (`SESSDATA=<v>; bili_jct=<v>` at minimum) for premium quality and better CDNs |
 
 The API stores working files in an in-memory `/tmp` tmpfs sized at 2 GB. Make sure Docker has sufficient RAM for your intended video size; for larger videos, replace the tmpfs with a bounded writable volume.
 

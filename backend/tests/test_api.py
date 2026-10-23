@@ -20,9 +20,26 @@ def test_reject_invalid_urls():
         assert response.status_code == 422
 
 def test_normalizes_supported_post_urls():
-    assert main.canonical_url("https://twitter.com/alice/status/123456?s=20") == "https://x.com/i/status/123456"
-    assert main.canonical_url("https://x.com/i/status/456") == "https://x.com/i/status/456"
-    assert main.canonical_url("https://x.com/i/web/status/789") == "https://x.com/i/status/789"
+    assert main.canonical_url("https://twitter.com/alice/status/123456?s=20") == ("https://x.com/i/status/123456", "x")
+    assert main.canonical_url("https://x.com/i/status/456") == ("https://x.com/i/status/456", "x")
+    assert main.canonical_url("https://x.com/i/web/status/789") == ("https://x.com/i/status/789", "x")
+
+def test_canonical_url_multi_platform():
+    assert main.canonical_url("https://www.youtube.com/watch?v=abc123&s=1")[1] == "youtube"
+    assert main.canonical_url("https://youtu.be/abc123")[1] == "youtube"
+    assert main.canonical_url("https://www.youtube.com/shorts/abc123")[1] == "youtube"
+    assert main.canonical_url("https://www.bilibili.com/video/BV1GJ411x7h7")[1] == "bilibili"
+    assert main.canonical_url("https://b23.tv/ab12cd3")[1] == "bilibili"
+
+def test_rejects_multi_platform_bad_urls():
+    for url in [
+        "http://youtube.com/watch?v=abc",
+        "https://youtube.evil.example/watch?v=abc",
+        "https://user:pass@bilibili.com/video/BV1x",
+        "https://bilibili.com:8443/video/BV1x",
+    ]:
+        response = client.post("/api/extract", json={"url": url})
+        assert response.status_code == 422
 
 def test_formats_allows_unreported_codecs():
     # X 不再为渐进式直链上报编解码信息：vcodec/acodec 为 None 表示未知而非无流。
@@ -31,8 +48,29 @@ def test_formats_allows_unreported_codecs():
          "protocol": "https", "height": 1280, "width": 720},
         {"format_id": "videoonly", "ext": "mp4", "vcodec": "avc1", "acodec": "none",
          "protocol": "https", "height": 720},
-    ]})
+    ]}, "x")
     assert [x["id"] for x in formats] == ["http-2176"]
+
+def test_dash_choices_pairs_video_with_best_audio():
+    # B 站/YouTube 均为 DASH 分离流：avc1 视频流配最高码率音频，ffmpeg 合并。
+    formats = main.choices({"formats": [
+        {"format_id": "30280", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2",
+         "protocol": "https", "tbr": 204},
+        {"format_id": "30232", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2",
+         "protocol": "https", "tbr": 103},
+        {"format_id": "30016", "ext": "mp4", "vcodec": "avc1.64001E", "acodec": "none",
+         "protocol": "https", "height": 360, "width": 640, "tbr": 350},
+        {"format_id": "100024", "ext": "mp4", "vcodec": "av01.0.08M.08", "acodec": "none",
+         "protocol": "https", "height": 720, "width": 1280, "tbr": 292},
+        {"format_id": "30064", "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none",
+         "protocol": "https", "height": 720, "width": 1280, "tbr": 1753},
+        {"format_id": "30080", "ext": "mp4", "vcodec": "avc1.640032", "acodec": "none",
+         "protocol": "https", "height": 1080, "width": 1920, "tbr": 2629},
+        {"format_id": "m3u8dup", "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none",
+         "protocol": "m3u8_native", "height": 720, "tbr": 3000},
+    ]}, "bilibili")
+    assert [f["id"] for f in formats] == ["30080+30280", "30064+30280", "30016+30280"]
+    assert formats[0]["label"] == "1080p"
 
 def test_formats_only_progressive_mp4():
     formats = main.choices({"formats": [
@@ -40,7 +78,7 @@ def test_formats_only_progressive_mp4():
         {"format_id": "audio", "ext": "m4a", "vcodec": "none", "acodec": "mp4a", "protocol": "https"},
         {"format_id": "hls", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "protocol": "m3u8_native"},
         {"format_id": "videoonly", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "protocol": "https"},
-    ]})
+    ]}, "x")
     assert [x["id"] for x in formats] == ["720"]
 
 def test_cookie_jar_from_env(monkeypatch):
@@ -59,12 +97,48 @@ def test_cookie_jar_unset(monkeypatch):
 def test_cookies_applied_to_ydl(monkeypatch):
     # 新版 yt-dlp 不再支持 cookiejar 选项，必须在构造后注入其全局 jar。
     monkeypatch.setenv("TWITTER_COOKIES", "auth_token=abc; ct0=def")
+    monkeypatch.setenv("BILI_COOKIES", "SESSDATA=xyz; bili_jct=tok")
     from yt_dlp import YoutubeDL
     with YoutubeDL({"quiet": True}) as ydl:
-        main._apply_twitter_cookies(ydl)
+        main._apply_cookies(ydl)
         injected = {c.name: c.value for c in ydl.cookiejar}
     assert injected.get("auth_token") == "abc"
     assert injected.get("ct0") == "def"
+    assert injected.get("SESSDATA") == "xyz"
+    assert injected.get("bili_jct") == "tok"
+
+def test_prefer_official_cdn_replaces_mcdn():
+    # B 站 playurl 的 base_url 常指向 P2P(mcdn) 节点，部分网络不可达；
+    # 应替换为 backupUrl 中的官方 CDN，无可用 backup 时保持原样。
+    data = {"data": {"dash": {"video": [
+        {"id": 30064,
+         "baseUrl": "https://xy1x2x3x4xy.mcdn.bilivideo.cn:8082/v/a.m4s?sig=1",
+         "backupUrl": ["https://edge.thirdparty.example:4483/v/a.m4s",
+                        "https://upos-sz-mirrorcoso1.bilivideo.com/v/a.m4s"]}],
+        "audio": [
+        {"id": 30280, "baseUrl": "https://xy5x6x7x8xy.mcdn.bilivideo.cn:8082/a.m4s",
+         "backupUrl": []}]}}}
+    main._prefer_official_cdn(data)
+    v = data["data"]["dash"]["video"][0]
+    a = data["data"]["dash"]["audio"][0]
+    assert "mirrorcoso1.bilivideo.com" in v["baseUrl"]
+    assert "mcdn" in a["baseUrl"]
+
+def test_is_playurl_api_by_path():
+    # 只按路径判断；下载直链的 query 含 gen=playurlv3，子串匹配会误伤 m4s 下载。
+    assert main._is_playurl_api("https://api.bilibili.com/x/player/wbi/playurl?bvid=1&cid=2")
+    assert main._is_playurl_api("https://api.bilibili.com/x/player/playurl?bvid=1")
+    assert not main._is_playurl_api(
+        "https://upos-sz-mirrorcoso1.bilivideo.com/upgcxcode/99/91/a.m4s?gen=playurlv3&os=coso1bv")
+
+def test_rewrite_playinfo_html():
+    # 登录态下 yt-dlp 直接使用网页内嵌的 __playinfo__（不请求 API），需在 HTML 层改写。
+    html = ('<script>window.__playinfo__={"code":0,"data":{"dash":{"video":['
+            '{"id":30064,"baseUrl":"https://xy1x2x3x4xy.mcdn.bilivideo.cn:8082/v/a.m4s",'
+            '"backupUrl":["https://upos-sz-mirrorcoso1.bilivideo.com/v/a.m4s"]}]}}}</script>')
+    out = main._rewrite_playinfo_html(html)
+    assert "mcdn" not in out
+    assert "mirrorcoso1.bilivideo.com" in out
 
 def test_extract_with_fake_data(monkeypatch):
     monkeypatch.setattr(main, "extract", lambda url: {

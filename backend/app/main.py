@@ -1,6 +1,7 @@
-"""Personal X / Twitter video extractor. Anonymous by default; optional login via TWITTER_COOKIES."""
+"""Multi-platform video extractor (X/Twitter, YouTube, Bilibili). Optional login cookies per platform."""
 import asyncio
 import http.cookiejar
+import json
 import os
 import re
 import shutil
@@ -18,9 +19,113 @@ from yt_dlp.utils import DownloadError
 
 app = FastAPI(title="X Video Studio API", docs_url=None, redoc_url=None)
 
+
+def _prefer_official_cdn(data: dict) -> None:
+    """把 B 站 playurl 响应中 P2P(mcdn) 的 base_url 替换为 backupUrl 里的官方 CDN。
+
+    mcdn 节点在部分运营商网络不可达；backupUrl 为同一资源的官方 CDN 地址。
+    无可用 backup 时保持原样，失败模式安全。
+    """
+    dash = ((data.get("data") or {}).get("dash")) or data.get("dash") or {}
+    for streams in (dash.get("video"), dash.get("audio")):
+        for stream in streams or []:
+            base = stream.get("baseUrl") or stream.get("base_url") or ""
+            if "mcdn" not in base:
+                continue
+            candidates = [u for u in (stream.get("backupUrl") or stream.get("backup_url") or [])
+                          if "mcdn" not in u]
+            candidates.sort(key=lambda u: "bilivideo.com" not in u)
+            if candidates:
+                stream["baseUrl"] = candidates[0]
+
+
+def _is_playurl_api(url: str) -> bool:
+    """按路径精确判断是否 B 站 playurl 接口；下载直链的 query 含 gen=playurlv3，不可用子串匹配。"""
+    return urlsplit(url).path.endswith("/playurl")
+
+
+def _rewrite_playinfo_html(html: str) -> str:
+    """改写网页内嵌 __playinfo__ 中的 mcdn CDN 地址；无变化时原样返回。"""
+    match = re.search(r"(window\.__playinfo__\s*=\s*)(\{.*?\})\s*</script>", html, re.S)
+    if not match:
+        return html
+    try:
+        data = json.loads(match.group(2))
+    except ValueError:
+        return html
+    _prefer_official_cdn(data)
+    rewritten = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    if rewritten == match.group(2):
+        return html
+    return html[:match.start(2)] + rewritten + html[match.end(2):]
+
+
+def _install_bili_cdn_patch() -> None:
+    """拦截 B 站播放数据响应，把 P2P(mcdn) 的 CDN 替换为官方备用 CDN。
+
+    登录态下播放数据内嵌在视频页 HTML（window.__playinfo__），匿名时走
+    /playurl 接口，故在 YoutubeDL.urlopen（所有请求的必经之路）按响应改写。
+    无 mcdn 或结构不符时原样返回，失败模式安全。
+    """
+
+    class _RereadResponse:
+        """替换 payload 后的只读响应包装，透传原响应的其余属性。"""
+
+        def __init__(self, resp, payload: bytes):
+            self._resp = resp
+            self._payload = payload
+            self._pos = 0
+
+        def read(self, n=-1):
+            remaining = self._payload[self._pos:]
+            if n == -1:
+                chunk = remaining
+            else:
+                chunk = remaining[:n]
+            self._pos += len(chunk)
+            return chunk
+
+        def __getattr__(self, name):
+            return getattr(self._resp, name)
+
+        def close(self):
+            self._resp.close()
+
+    orig_urlopen = YoutubeDL.urlopen
+
+    def patched_urlopen(self, req, *args, **kwargs):
+        resp = orig_urlopen(self, req, *args, **kwargs)
+        try:
+            url = getattr(req, "url", "") or ""
+            # 登录态下播放数据内嵌在视频页 HTML（window.__playinfo__）。
+            if "bilibili.com/video/" in url:
+                text = resp.read().decode("utf-8", "replace")
+                new_text = _rewrite_playinfo_html(text)
+                if new_text != text:
+                    return _RereadResponse(resp, new_text.encode())
+                return resp
+            if not _is_playurl_api(url):
+                return resp
+            data = json.loads(resp.read())
+            _prefer_official_cdn(data)
+            dash = ((data.get("data") or {}).get("dash")) or data.get("dash")
+            if dash:
+                return _RereadResponse(resp, json.dumps(data).encode())
+            return resp
+        except Exception:
+            return resp
+
+    YoutubeDL.urlopen = patched_urlopen
+
+
+_install_bili_cdn_patch()
+
 STATUS = re.compile(r"^/(?:[^/]+/status|i/(?:web/)?status)/(\d+)(?:/.*)?$", re.I)
-ALLOWED_HOSTS = {"x.com", "www.x.com", "twitter.com", "www.twitter.com",
-                 "mobile.twitter.com", "mobile.x.com"}
+X_HOSTS = {"x.com", "www.x.com", "twitter.com", "www.twitter.com",
+           "mobile.twitter.com", "mobile.x.com"}
+YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com",
+                 "music.youtube.com", "youtu.be", "www.youtu.be"}
+BILI_HOSTS = {"bilibili.com", "www.bilibili.com", "m.bilibili.com", "b23.tv"}
 MAX_DURATION = int(os.getenv("MAX_DURATION_SECONDS", "3600"))
 MAX_BYTES = int(os.getenv("MAX_DOWNLOAD_MB", "1024")) * 1024 * 1024
 
@@ -33,32 +138,47 @@ class DownloadRequest(VideoRequest):
     format_id: str = Field(min_length=1, max_length=120)
 
 
-def canonical_url(value: str) -> str:
+def canonical_url(value: str) -> tuple[str, str]:
+    """校验并规范化输入链接，返回 (规范化 URL, 平台标识)。"""
     try:
         parts = urlsplit(value.strip())
-        if parts.scheme != "https" or (parts.hostname or "").lower() not in ALLOWED_HOSTS:
+        host = (parts.hostname or "").lower()
+        if parts.scheme != "https" or not host:
             raise ValueError()
         if parts.username or parts.password or parts.port:
             raise ValueError()
-        match = STATUS.fullmatch(parts.path.rstrip("/"))
-        if not match:
-            raise ValueError()
-        return f"https://x.com/i/status/{match.group(1)}"
+        if host in X_HOSTS:
+            match = STATUS.fullmatch(parts.path.rstrip("/"))
+            if not match:
+                raise ValueError()
+            return f"https://x.com/i/status/{match.group(1)}", "x"
+        if host in YOUTUBE_HOSTS:
+            if not parts.path.strip("/"):
+                raise ValueError()
+            return value.strip(), "youtube"
+        if host in BILI_HOSTS:
+            if not parts.path.strip("/"):
+                raise ValueError()
+            return value.strip(), "bilibili"
+        raise ValueError()
     except (ValueError, TypeError) as exc:
-        raise HTTPException(422, "请输入有效的公开 X/Twitter 帖子 HTTPS 链接。") from exc
+        raise HTTPException(422, "请输入有效的 X/Twitter、YouTube 或 B 站公开视频 HTTPS 链接。") from exc
 
 
-def _twitter_cookie_jar() -> http.cookiejar.CookieJar | None:
-    """从 TWITTER_COOKIES（格式：name=value; name=value）构造 X 登录凭据。
+X_COOKIE_DOMAINS = (".x.com", ".twitter.com")
+BILI_COOKIE_DOMAINS = (".bilibili.com",)
 
-    登录态可使受保护/敏感内容的帖子可解析；未配置时保持匿名访问。
+
+def _cookie_jar_from_env(env_name: str, domains: tuple) -> http.cookiejar.CookieJar | None:
+    """从环境变量（格式：name=value; name=value）构造登录 cookie。
+
+    登录态可解锁受限内容与更优 CDN；未配置时保持匿名访问。
     """
-    raw = os.getenv("TWITTER_COOKIES", "").strip()
+    raw = os.getenv(env_name, "").strip()
     if not raw:
         return None
     jar = http.cookiejar.CookieJar()
-    # X 的接口同时分布在 x.com 与 twitter.com，两个域都要携带。
-    for domain in (".x.com", ".twitter.com"):
+    for domain in domains:
         for pair in raw.split(";"):
             name, sep, value = pair.strip().partition("=")
             if not sep or not name or not value:
@@ -72,16 +192,21 @@ def _twitter_cookie_jar() -> http.cookiejar.CookieJar | None:
     return jar if jar else None
 
 
-def _apply_twitter_cookies(ydl) -> None:
-    """把 TWITTER_COOKIES 注入 YoutubeDL 的全局 cookiejar。
+def _twitter_cookie_jar() -> http.cookiejar.CookieJar | None:
+    return _cookie_jar_from_env("TWITTER_COOKIES", X_COOKIE_DOMAINS)
+
+
+def _apply_cookies(ydl) -> None:
+    """把各平台登录 cookie 注入 YoutubeDL 的全局 cookiejar。
 
     新版 yt-dlp 已不支持 cookiejar 选项，只能在构造后写入其全局 jar。
     """
-    jar = _twitter_cookie_jar()
-    if jar is None:
-        return
-    for cookie in jar:
-        ydl.cookiejar.set_cookie(cookie)
+    for jar in (_twitter_cookie_jar(),
+                _cookie_jar_from_env("BILI_COOKIES", BILI_COOKIE_DOMAINS)):
+        if jar is None:
+            continue
+        for cookie in jar:
+            ydl.cookiejar.set_cookie(cookie)
 
 
 def extract(url: str) -> dict:
@@ -93,7 +218,7 @@ def extract(url: str) -> dict:
     }
     try:
         with YoutubeDL(opts) as ydl:
-            _apply_twitter_cookies(ydl)
+            _apply_cookies(ydl)
             data = ydl.extract_info(url, download=False)
         if not data:
             raise ValueError("未找到可下载的视频。")
@@ -110,7 +235,7 @@ def extract(url: str) -> dict:
         raise HTTPException(422, f"解析失败：{str(exc)[:260]}") from exc
 
 
-def choices(data: dict) -> list:
+def _twitter_choices(data: dict) -> list:
     result = []
     seen = set()
     for f in data.get("formats") or []:
@@ -138,6 +263,48 @@ def choices(data: dict) -> list:
     return result
 
 
+def _dash_choices(data: dict) -> list:
+    """DASH 分离流平台（YouTube / B 站）：avc1 视频流配最高码率音频，ffmpeg 合并输出 MP4。"""
+    formats = data.get("formats") or []
+    videos = {}
+    for f in formats:
+        if (f.get("vcodec") in (None, "none") or
+            f.get("acodec") != "none" or
+            f.get("protocol") != "https" or
+            not f.get("height")):
+            continue
+        # 同分辨率优先 avc1（保证合并后为 MP4 容器），其次取码率更高者。
+        key = (str(f.get("vcodec", "")).startswith("avc1"), f.get("tbr") or 0)
+        if f["height"] not in videos or key > videos[f["height"]][0]:
+            videos[f["height"]] = (key, f)
+    audios = [f for f in formats
+              if f.get("acodec") not in (None, "none")
+              and f.get("vcodec") in (None, "none")
+              and f.get("protocol") == "https"]
+    if not audios or not videos:
+        return []
+    # m4a 音频与 avc1 视频合并后 MP4 兼容性最好。
+    audio = max(audios, key=lambda f: (f.get("ext") == "m4a", f.get("tbr") or 0))
+    result = []
+    for height, (_, v) in videos.items():
+        result.append({
+            "id": f"{v['format_id']}+{audio['format_id']}",
+            "width": v.get("width"),
+            "height": height,
+            "bitrate": (v.get("tbr") or 0) + (audio.get("tbr") or 0),
+            "size": v.get("filesize") or v.get("filesize_approx"),
+            "label": f"{height}p",
+        })
+    result.sort(key=lambda f: f["height"], reverse=True)
+    return result
+
+
+def choices(data: dict, platform: str) -> list:
+    if platform in ("youtube", "bilibili"):
+        return _dash_choices(data)
+    return _twitter_choices(data)
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -145,11 +312,11 @@ def health():
 
 @app.post("/api/extract")
 async def inspect_video(request: VideoRequest):
-    url = canonical_url(request.url)
+    url, platform = canonical_url(request.url)
     data = await asyncio.to_thread(extract, url)
-    formats = choices(data)
+    formats = choices(data, platform)
     if not formats:
-        raise HTTPException(422, "未发现带音轨的直链 MP4 视频；此帖子可能仅提供 HLS 或受访问限制。")
+        raise HTTPException(422, "未发现可下载的视频格式；此内容可能仅提供流媒体或受访问限制。")
     return {
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
@@ -158,25 +325,28 @@ async def inspect_video(request: VideoRequest):
         "duration": data.get("duration"),
         "uploader": data.get("uploader") or data.get("channel") or "",
         "url": url,
+        "platform": platform,
         "formats": formats,
     }
 
 
-def download_video(url: str, format_id: str, folder: Path) -> Path:
+def download_video(url: str, format_id: str, folder: Path, platform: str) -> Path:
     # Re-extract server-side: never accept a user-supplied CDN address.
     data = extract(url)
-    permitted = {x["id"] for x in choices(data)}
+    permitted = {x["id"] for x in choices(data, platform)}
     if format_id not in permitted:
         raise ValueError("该画质已不可用，请重新解析。")
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "format": format_id, "outtmpl": str(folder / "video.%(ext)s"),
+        "merge_output_format": "mp4",
         "max_filesize": MAX_BYTES, "socket_timeout": 15,
         "retries": 2, "continuedl": False, "nopart": True,
     }
     with YoutubeDL(opts) as ydl:
-        _apply_twitter_cookies(ydl)
+        _apply_cookies(ydl)
         ydl.download([url])
+    # 分离流经 ffmpeg 合并后输出 video.mp4；按实际产物匹配以防扩展名差异。
     output = next(folder.glob("video.mp4"), None)
     if not output or not output.is_file():
         raise ValueError("没有生成可下载的视频文件。")
@@ -187,13 +357,14 @@ def download_video(url: str, format_id: str, folder: Path) -> Path:
 
 @app.post("/api/download")
 async def download(request: DownloadRequest):
-    url = canonical_url(request.url)
+    url, platform = canonical_url(request.url)
     folder = Path(tempfile.mkdtemp(prefix="xvideo-"))
     try:
-        output = await asyncio.to_thread(download_video, url, request.format_id, folder)
+        output = await asyncio.to_thread(
+            download_video, url, request.format_id, folder, platform)
         return FileResponse(
             output, media_type="video/mp4",
-            filename=f"x-video-{url.rsplit('/', 1)[-1]}.mp4",
+            filename=f"video-{url.rsplit('/', 1)[-1]}.mp4",
             background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True),
         )
     except (DownloadError, ValueError) as exc:
