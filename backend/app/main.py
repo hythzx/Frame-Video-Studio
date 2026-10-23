@@ -17,7 +17,7 @@ from yt_dlp.utils import DownloadError
 
 app = FastAPI(title="X Video Studio API", docs_url=None, redoc_url=None)
 
-STATUS = re.compile(r"^/(?:[^/]+/status|i/status)/(\d+)(?:/.*)?$", re.I)
+STATUS = re.compile(r"^/(?:[^/]+/status|i/(?:web/)?status)/(\d+)(?:/.*)?$", re.I)
 ALLOWED_HOSTS = {"x.com", "www.x.com", "twitter.com", "www.twitter.com",
                  "mobile.twitter.com", "mobile.x.com"}
 MAX_DURATION = int(os.getenv("MAX_DURATION_SECONDS", "3600"))
@@ -77,9 +77,10 @@ def choices(data: dict) -> list:
     seen = set()
     for f in data.get("formats") or []:
         # Progressive MP4: contains audio + video and can be downloaded without merging.
+        # X 不再为渐进式直链上报编解码信息：None 表示未知而非无流，仅拒绝明确的 "none"。
         if (f.get("ext") != "mp4" or
-            f.get("vcodec") in (None, "none") or
-            f.get("acodec") in (None, "none") or
+            f.get("vcodec") == "none" or
+            f.get("acodec") == "none" or
             f.get("protocol") not in ("https", "http")):
             continue
         fid = str(f.get("format_id", ""))

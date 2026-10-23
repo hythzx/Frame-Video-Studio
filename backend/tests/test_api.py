@@ -22,6 +22,17 @@ def test_reject_invalid_urls():
 def test_normalizes_supported_post_urls():
     assert main.canonical_url("https://twitter.com/alice/status/123456?s=20") == "https://x.com/i/status/123456"
     assert main.canonical_url("https://x.com/i/status/456") == "https://x.com/i/status/456"
+    assert main.canonical_url("https://x.com/i/web/status/789") == "https://x.com/i/status/789"
+
+def test_formats_allows_unreported_codecs():
+    # X 不再为渐进式直链上报编解码信息：vcodec/acodec 为 None 表示未知而非无流。
+    formats = main.choices({"formats": [
+        {"format_id": "http-2176", "ext": "mp4", "vcodec": None, "acodec": None,
+         "protocol": "https", "height": 1280, "width": 720},
+        {"format_id": "videoonly", "ext": "mp4", "vcodec": "avc1", "acodec": "none",
+         "protocol": "https", "height": 720},
+    ]})
+    assert [x["id"] for x in formats] == ["http-2176"]
 
 def test_formats_only_progressive_mp4():
     formats = main.choices({"formats": [
