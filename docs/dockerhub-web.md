@@ -1,5 +1,7 @@
 # Frame Video Studio — Web
 
+![Frame Video Studio icon](https://raw.githubusercontent.com/hythzx/Twitter-Video-Downloader/main/frontend/public/favicon.svg)
+
 **A clean, responsive video downloader interface for X / Twitter, YouTube and Bilibili.**
 
 This is the frontend image of [Frame Video Studio](https://github.com/hythzx/Twitter-Video-Downloader). The Vue 3 app is compiled into static assets and served by **Nginx**. It offers platform-aware link entry, video metadata and thumbnail preview, resolution selection and a download button.
