@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Frame Video Studio">
+  <rect width="64" height="64" rx="17" fill="#B9F68C"/>
+  <rect x="14" y="15" width="36" height="34" rx="7" fill="#152219"/>
+  <path d="M25 15v34M39 15v34" stroke="#B9F68C" stroke-width="3.5" opacity=".95"/>
+  <path d="M29 25.5 40 32l-11 6.5z" fill="#B9F68C"/>
+</svg>
