@@ -32,6 +32,7 @@ To expose it through a trusted reverse proxy, change `BIND_ADDRESS` in `.env` to
 | `PORT` | `8080` | Host port |
 | `MAX_DURATION_SECONDS` | `3600` | Maximum allowed video length |
 | `MAX_DOWNLOAD_MB` | `1024` | Approximate download limit |
+| `TWITTER_COOKIES` | *(empty)* | Optional `auth_token=<v>; ct0=<v>` X login cookies; enables restricted/sensitive posts, sent as a header to X |
 
 The API stores working files in an in-memory `/tmp` tmpfs sized at 2 GB. Make sure Docker has sufficient RAM for your intended video size; for larger videos, replace the tmpfs with a bounded writable volume.
 

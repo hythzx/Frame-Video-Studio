@@ -1,5 +1,6 @@
-"""Personal X / Twitter video extractor. No cookies, accounts or database."""
+"""Personal X / Twitter video extractor. Anonymous by default; optional login via TWITTER_COOKIES."""
 import asyncio
+import http.cookiejar
 import os
 import re
 import shutil
@@ -47,6 +48,42 @@ def canonical_url(value: str) -> str:
         raise HTTPException(422, "请输入有效的公开 X/Twitter 帖子 HTTPS 链接。") from exc
 
 
+def _twitter_cookie_jar() -> http.cookiejar.CookieJar | None:
+    """从 TWITTER_COOKIES（格式：name=value; name=value）构造 X 登录凭据。
+
+    登录态可使受保护/敏感内容的帖子可解析；未配置时保持匿名访问。
+    """
+    raw = os.getenv("TWITTER_COOKIES", "").strip()
+    if not raw:
+        return None
+    jar = http.cookiejar.CookieJar()
+    # X 的接口同时分布在 x.com 与 twitter.com，两个域都要携带。
+    for domain in (".x.com", ".twitter.com"):
+        for pair in raw.split(";"):
+            name, sep, value = pair.strip().partition("=")
+            if not sep or not name or not value:
+                continue
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=name, value=value, port=None, port_specified=False,
+                domain=domain, domain_specified=True, domain_initial_dot=True,
+                path="/", path_specified=True, secure=True, expires=None,
+                discard=True, comment=None, comment_url=None, rest={},
+            ))
+    return jar if jar else None
+
+
+def _apply_twitter_cookies(ydl) -> None:
+    """把 TWITTER_COOKIES 注入 YoutubeDL 的全局 cookiejar。
+
+    新版 yt-dlp 已不支持 cookiejar 选项，只能在构造后写入其全局 jar。
+    """
+    jar = _twitter_cookie_jar()
+    if jar is None:
+        return
+    for cookie in jar:
+        ydl.cookiejar.set_cookie(cookie)
+
+
 def extract(url: str) -> dict:
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
@@ -56,6 +93,7 @@ def extract(url: str) -> dict:
     }
     try:
         with YoutubeDL(opts) as ydl:
+            _apply_twitter_cookies(ydl)
             data = ydl.extract_info(url, download=False)
         if not data:
             raise ValueError("未找到可下载的视频。")
@@ -137,6 +175,7 @@ def download_video(url: str, format_id: str, folder: Path) -> Path:
         "retries": 2, "continuedl": False, "nopart": True,
     }
     with YoutubeDL(opts) as ydl:
+        _apply_twitter_cookies(ydl)
         ydl.download([url])
     output = next(folder.glob("video.mp4"), None)
     if not output or not output.is_file():

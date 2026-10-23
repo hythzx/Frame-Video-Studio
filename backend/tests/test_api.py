@@ -43,6 +43,29 @@ def test_formats_only_progressive_mp4():
     ]})
     assert [x["id"] for x in formats] == ["720"]
 
+def test_cookie_jar_from_env(monkeypatch):
+    monkeypatch.setenv("TWITTER_COOKIES", "auth_token=abc; ct0=def")
+    jar = main._twitter_cookie_jar()
+    cookies = {c.name: c.value for c in jar}
+    assert cookies == {"auth_token": "abc", "ct0": "def"}
+    # X 的接口分布在 x.com 与 twitter.com，两个域都要携带。
+    assert {c.domain for c in jar} == {".x.com", ".twitter.com"}
+    assert all(c.secure for c in jar)
+
+def test_cookie_jar_unset(monkeypatch):
+    monkeypatch.delenv("TWITTER_COOKIES", raising=False)
+    assert main._twitter_cookie_jar() is None
+
+def test_cookies_applied_to_ydl(monkeypatch):
+    # 新版 yt-dlp 不再支持 cookiejar 选项，必须在构造后注入其全局 jar。
+    monkeypatch.setenv("TWITTER_COOKIES", "auth_token=abc; ct0=def")
+    from yt_dlp import YoutubeDL
+    with YoutubeDL({"quiet": True}) as ydl:
+        main._apply_twitter_cookies(ydl)
+        injected = {c.name: c.value for c in ydl.cookiejar}
+    assert injected.get("auth_token") == "abc"
+    assert injected.get("ct0") == "def"
+
 def test_extract_with_fake_data(monkeypatch):
     monkeypatch.setattr(main, "extract", lambda url: {
         "id": "123", "title": "Test Video", "duration": 20, "thumbnail": None,
