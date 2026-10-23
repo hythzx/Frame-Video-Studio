@@ -1,7 +1,6 @@
 services:
   api:
-    build:
-      context: ./backend
+    image: hythzx/video-downloader-api
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
@@ -17,8 +16,7 @@ services:
     cap_drop:
       - ALL
   web:
-    build:
-      context: ./frontend
+    image: hythzx/video-downloader-web
     restart: unless-stopped
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:80"
