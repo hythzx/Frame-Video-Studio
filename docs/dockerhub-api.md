@@ -4,7 +4,7 @@
 
 This is the backend image of [Frame Video Studio](https://github.com/hythzx/Twitter-Video-Downloader). Built with **FastAPI, yt-dlp and FFmpeg**, it extracts public video metadata, lists available resolutions, downloads the selected format and merges separate audio/video streams when supported.
 
-> This is the **API image only**, not a web interface. For the complete UI, deploy it together with [video-downloader-web](https://hub.docker.com/r/).
+> This is the **API image only**, not a web interface. For the complete UI, deploy it together with \`video-downloader-web\`.
 
 ## Image
 
