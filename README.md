@@ -74,3 +74,34 @@ docker compose up -d --build
 ```
 
 For extractor compatibility, rebuild regularly so that a current yt-dlp release gets installed. If you need private posts, login cookies, HLS merge support, asynchronous job queues or large-file streaming, those are separate features and intentionally not included by default.
+
+
+## Docker Hub automatic publishing
+
+GitHub Actions workflow: `.github/workflows/docker-publish.yml`
+
+Configure GitHub repository Actions variable `DOCKERHUB_USERNAME` and Actions secret `DOCKERHUB_TOKEN`. These are the same names used by `data-analysis-agent`; secrets and variables are repository-scoped unless explicitly configured at the organization level.
+
+Pushing to `main` builds and publishes:
+- `<DOCKERHUB_USERNAME>/video-downloader-api:latest`
+- `<DOCKERHUB_USERNAME>/video-downloader-web:latest`
+
+Version tags such as `v1.0.0` also publish `1.0.0` and `1.0` tags. Both images are built for amd64 and arm64. You can run the workflow manually from the GitHub Actions tab.
+
+### Deploy prebuilt images
+
+```bash
+cp .env.example .env
+# Set DOCKERHUB_USERNAME=<your Docker Hub username> in .env
+docker compose -f compose.deploy.yaml pull
+docker compose -f compose.deploy.yaml up -d
+```
+
+To upgrade prebuilt images:
+
+```bash
+docker compose -f compose.deploy.yaml pull
+docker compose -f compose.deploy.yaml up -d
+```
+
+Set `IMAGE_TAG=1.0.0` in your `.env` to pin an immutable release tag rather than following `latest`. Do not put the Docker Hub access token in `.env`; it is only required by GitHub Actions. The original `compose.yaml` is retained for local builds.
