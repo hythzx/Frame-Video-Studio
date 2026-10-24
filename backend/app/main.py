@@ -138,6 +138,16 @@ class DownloadRequest(VideoRequest):
     format_id: str = Field(min_length=1, max_length=120)
 
 
+class AudioRequest(VideoRequest):
+    audio_format: str = Field(pattern=r"^(mp3|m4a)$")
+
+
+class SubtitleRequest(VideoRequest):
+    language: str = Field(min_length=1, max_length=40)
+    subtitle_format: str = Field(pattern=r"^(vtt|srt)$")
+    automatic: bool = False
+
+
 def canonical_url(value: str) -> tuple[str, str]:
     """校验并规范化输入链接，返回 (规范化 URL, 平台标识)。"""
     try:
@@ -299,6 +309,19 @@ def _dash_choices(data: dict) -> list:
     return result
 
 
+def subtitle_choices(data: dict) -> list:
+    tracks = []
+    for automatic, field in ((False, "subtitles"), (True, "automatic_captions")):
+        for language, formats in (data.get(field) or {}).items():
+            if isinstance(formats, list) and formats:
+                tracks.append({"language": language, "automatic": automatic})
+    return sorted(tracks, key=lambda t: (t["automatic"], t["language"]))
+
+
+def audio_available(data: dict) -> bool:
+    return any(f.get("acodec") not in (None, "none") for f in (data.get("formats") or []))
+
+
 def choices(data: dict, platform: str) -> list:
     if platform in ("youtube", "bilibili"):
         return _dash_choices(data)
@@ -315,8 +338,10 @@ async def inspect_video(request: VideoRequest):
     url, platform = canonical_url(request.url)
     data = await asyncio.to_thread(extract, url)
     formats = choices(data, platform)
-    if not formats:
-        raise HTTPException(422, "未发现可下载的视频格式；此内容可能仅提供流媒体或受访问限制。")
+    subtitles = subtitle_choices(data)
+    audio = audio_available(data)
+    if not formats and not audio and not subtitles:
+        raise HTTPException(422, "未发现可下载的视频、音频或字幕。")
     return {
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
@@ -327,6 +352,8 @@ async def inspect_video(request: VideoRequest):
         "url": url,
         "platform": platform,
         "formats": formats,
+        "audio_available": audio,
+        "subtitles": subtitles,
     }
 
 
@@ -373,3 +400,94 @@ async def download(request: DownloadRequest):
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
+
+
+def _media_options(folder: Path) -> dict:
+    return {
+        "quiet": True, "no_warnings": True, "noplaylist": True,
+        "outtmpl": str(folder / "media.%(ext)s"),
+        "max_filesize": MAX_BYTES, "socket_timeout": 15,
+        "retries": 2, "nopart": True,
+    }
+
+
+def _run_audio(url: str, fmt: str, folder: Path) -> Path:
+    if not audio_available(extract(url)):
+        raise ValueError("视频没有可用音轨。")
+    opts = _media_options(folder)
+    opts.update({
+        "format": "bestaudio/best",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": fmt,
+            "preferredquality": "192",
+        }],
+    })
+    with YoutubeDL(opts) as ydl:
+        _apply_cookies(ydl)
+        ydl.download([url])
+    output = folder / f"media.{fmt}"
+    if not output.is_file():
+        raise ValueError("音频转换没有生成文件。")
+    if output.stat().st_size > MAX_BYTES:
+        raise ValueError("音频文件超过大小限制。")
+    return output
+
+
+def _run_subtitle(url: str, language: str, fmt: str, automatic: bool, folder: Path) -> Path:
+    tracks = subtitle_choices(extract(url))
+    if not any(t["language"] == language and t["automatic"] == automatic for t in tracks):
+        raise ValueError("字幕轨道不可用，请重新解析。")
+    opts = _media_options(folder)
+    opts.update({
+        "skip_download": True,
+        "writesubtitles": not automatic,
+        "writeautomaticsub": automatic,
+        "subtitleslangs": [language],
+        "subtitlesformat": "vtt/srt/best",
+        "convertsubtitles": fmt,
+    })
+    with YoutubeDL(opts) as ydl:
+        _apply_cookies(ydl)
+        ydl.download([url])
+    output = next(iter(folder.glob(f"media.*.{fmt}")), None)
+    if not output or not output.is_file():
+        raise ValueError("字幕文件未生成，平台可能不提供此格式。")
+    if output.stat().st_size > min(MAX_BYTES, 20 * 1024 * 1024):
+        raise ValueError("字幕文件超过大小限制。")
+    return output
+
+
+async def _temporary_response(worker, request_url: str, filename: str, mime: str, *args):
+    url, _ = canonical_url(request_url)
+    folder = Path(tempfile.mkdtemp(prefix="frame-media-"))
+    try:
+        output = await asyncio.to_thread(worker, url, *args, folder)
+        return FileResponse(output, filename=filename, media_type=mime,
+                            background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True))
+    except (DownloadError, ValueError, HTTPException) as exc:
+        shutil.rmtree(folder, ignore_errors=True)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(422, f"处理失败：{str(exc)[:260]}") from exc
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+
+
+@app.post("/api/audio")
+async def download_audio(request: AudioRequest):
+    return await _temporary_response(
+        _run_audio, request.url, f"audio.{request.audio_format}",
+        "audio/mpeg" if request.audio_format == "mp3" else "audio/mp4",
+        request.audio_format)
+
+
+@app.post("/api/subtitle")
+async def download_subtitle(request: SubtitleRequest):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", request.language):
+        raise HTTPException(422, "字幕语言代码无效。")
+    return await _temporary_response(
+        _run_subtitle, request.url, f"subtitle.{request.subtitle_format}",
+        "text/vtt" if request.subtitle_format == "vtt" else "application/x-subrip",
+        request.language, request.subtitle_format, request.automatic)
