@@ -8,6 +8,11 @@ const downloading = ref(false)
 const error = ref('')
 const video = ref(null)
 const selected = ref('')
+const downloadMode = ref('video')
+const audioFormat = ref('mp3')
+const subtitleFormat = ref('srt')
+const subtitleIndex = ref(0)
+const subtitleTracks = computed(() => video.value?.subtitles || [])
 const platforms = [
   { id: 'x', name: 'X / Twitter', short: 'X', sample: 'https://x.com/username/status/...' },
   { id: 'youtube', name: 'YouTube', short: 'YT', sample: 'https://www.youtube.com/watch?v=...' },
@@ -45,6 +50,8 @@ async function analyze() {
     if (!res.ok) throw new Error(await getError(res))
     video.value = await res.json()
     selected.value = video.value.formats?.[0]?.id || ''
+    downloadMode.value = video.value.formats?.length ? 'video' : (video.value.audio_available ? 'audio' : 'subtitle')
+    subtitleIndex.value = 0
   } catch (e) { error.value = e.message || '解析失败' }
   finally { loading.value = false }
 }
@@ -53,17 +60,33 @@ async function paste() {
   catch { error.value = '无法读取剪贴板，请手动粘贴链接' }
 }
 async function download() {
-  if (!selected.value || downloading.value) return
+  if (downloading.value || !video.value) return
+  if (downloadMode.value === 'video' && !selected.value) return
+  if (downloadMode.value === 'subtitle' && !subtitleTracks.value[subtitleIndex.value]) return
   downloading.value = true
   error.value = ''
   try {
-    const res = await fetch('/api/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: video.value.url, format_id: selected.value }) })
+    const mode = downloadMode.value
+    const track = subtitleTracks.value[subtitleIndex.value]
+    const endpoint = mode === 'video' ? '/api/download' : mode === 'audio' ? '/api/audio' : '/api/subtitle'
+    const payload = { url: video.value.url }
+    if (mode === 'video') payload.format_id = selected.value
+    if (mode === 'audio') payload.audio_format = audioFormat.value
+    if (mode === 'subtitle') Object.assign(payload, {
+      language: track.language, automatic: track.automatic, subtitle_format: subtitleFormat.value
+    })
+    const res = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    })
     if (!res.ok) throw new Error(await getError(res))
     const blob = await res.blob()
     const href = URL.createObjectURL(blob)
     const a = document.createElement('a')
+    const ext = mode === 'video' ? 'mp4' : mode === 'audio' ? audioFormat.value : subtitleFormat.value
     a.href = href
-    a.download = (video.value.platform || 'video') + '-' + String(video.value.id || 'download').replace(/[^a-zA-Z0-9_-]/g, '_') + '.mp4'
+    a.download = (video.value.platform || 'video') + '-' +
+      String(video.value.id || 'download').replace(/[^a-zA-Z0-9_-]/g, '_') +
+      (mode === 'subtitle' ? '-' + track.language : '') + '.' + ext
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -151,19 +174,40 @@ function useExample(platform) {
                 <h2>{{ video.title }}</h2>
                 <p v-if="video.uploader" class="author">{{ video.uploader }}</p>
                 <div class="rule"></div>
-                <div class="mini-label format-header">选择视频画质 <span>{{ video.formats?.length || 0 }} 种格式</span></div>
-                <div class="format-options">
-                  <button v-for="f in video.formats" :key="f.id" class="format-option" :class="{ active: selected === f.id }" @click="selected = f.id" type="button">
-                    <span><strong>{{ f.label }}</strong><small>{{ f.width ? f.width + ' × ' + f.height : 'MP4' }}</small></span>
-                    <span class="format-right"><small>{{ formatSize(f.size) }}</small><span class="radio-check"><Check v-if="selected === f.id" :size="13"/></span></span>
-                  </button>
+                <div class="download-modes" role="tablist" aria-label="下载类型">
+                  <button v-if="video.formats?.length" type="button" :class="{active:downloadMode === 'video'}" @click="downloadMode='video'">视频</button>
+                  <button v-if="video.audio_available" type="button" :class="{active:downloadMode === 'audio'}" @click="downloadMode='audio'">纯音频</button>
+                  <button v-if="subtitleTracks.length" type="button" :class="{active:downloadMode === 'subtitle'}" @click="downloadMode='subtitle'">字幕</button>
                 </div>
-                <button class="primary-btn download-btn" :disabled="downloading || !selected" @click="download">
+                <template v-if="downloadMode === 'video'">
+                  <div class="mini-label format-header">选择视频画质 <span>{{ video.formats?.length || 0 }} 种格式</span></div>
+                  <div class="format-options">
+                    <button v-for="f in video.formats" :key="f.id" class="format-option" :class="{ active: selected === f.id }" @click="selected = f.id" type="button">
+                      <span><strong>{{ f.label }}</strong><small>{{ f.width ? f.width + ' × ' + f.height : 'MP4' }}</small></span>
+                      <span class="format-right"><small>{{ formatSize(f.size) }}</small><span class="radio-check"><Check v-if="selected === f.id" :size="13"/></span></span>
+                    </button>
+                  </div>
+                </template>
+                <div v-else-if="downloadMode === 'audio'" class="media-options">
+                  <label for="audio-format">音频格式</label>
+                  <select id="audio-format" v-model="audioFormat"><option value="mp3">MP3 · 兼容性好</option><option value="m4a">M4A · AAC 音频</option></select>
+                  <p>使用 FFmpeg 从可用音轨提取或转码，不会提升原始音质。</p>
+                </div>
+                <div v-else class="media-options">
+                  <label for="subtitle-track">字幕语言</label>
+                  <select id="subtitle-track" v-model.number="subtitleIndex">
+                    <option v-for="(t, i) in subtitleTracks" :key="t.language + t.automatic" :value="i">{{ t.language }} · {{ t.automatic ? '自动字幕' : '人工字幕' }}</option>
+                  </select>
+                  <label for="subtitle-format">字幕文件格式</label>
+                  <select id="subtitle-format" v-model="subtitleFormat"><option value="srt">SRT</option><option value="vtt">VTT</option></select>
+                  <p>仅显示原平台提供的字幕轨道；不包含语音识别或翻译功能。</p>
+                </div>
+                <button class="primary-btn download-btn" :disabled="downloading || (downloadMode === 'video' && !selected)" @click="download">
                   <LoaderCircle v-if="downloading" :size="18" class="spin"/>
                   <Download v-else :size="18"/>
-                  {{ downloading ? '正在准备视频，请勿关闭页面…' : '下载视频 · ' + (currentFormat?.label || 'MP4') }}
+                  {{ downloading ? '正在准备文件，请勿关闭页面…' : downloadMode === 'video' ? '下载视频 · ' + (currentFormat?.label || 'MP4') : downloadMode === 'audio' ? '下载音频 · ' + audioFormat.toUpperCase() : '下载字幕 · ' + subtitleFormat.toUpperCase() }}
                 </button>
-                <p v-if="video.platform !== 'x'" class="merge-hint">高画质视频可能需要等待服务端合并音视频流。</p>
+                <p v-if="downloadMode === 'video' && video.platform !== 'x'" class="merge-hint">高画质视频可能需要等待服务端合并音视频流。</p>
               </div>
             </div>
             <button class="again" @click="reset">解析另一个视频 <ArrowRight :size="15"/></button>
