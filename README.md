@@ -105,3 +105,29 @@ docker compose -f compose.deploy.yaml up -d
 ```
 
 Set `IMAGE_TAG=1.0.0` in your `.env` to pin an immutable release tag rather than following `latest`. Do not put the Docker Hub access token in `.env`; it is only required by GitHub Actions. The original `compose.yaml` is retained for local builds.
+
+## Audio and subtitles
+
+After pasting a supported X/Twitter, YouTube or Bilibili video link, the result panel offers up to three download tabs:
+
+- **Video**: existing MP4 resolution selection.
+- **Audio**: extract or convert the best available audio as MP3 or M4A using FFmpeg.
+- **Subtitles**: choose one of the source's available human-written or automatic subtitle tracks, and save as SRT or VTT. Availability depends on the platform; this feature does not transcribe or translate speech.
+
+Additional API endpoints:
+
+```http
+POST /api/audio
+Content-Type: application/json
+
+{"url":"https://www.youtube.com/watch?v=VIDEO_ID","audio_format":"mp3"}
+```
+
+```http
+POST /api/subtitle
+Content-Type: application/json
+
+{"url":"https://www.youtube.com/watch?v=VIDEO_ID","language":"en","automatic":false,"subtitle_format":"srt"}
+```
+
+`/api/extract` now also returns `audio_available` and `subtitles` (objects with `language` and `automatic`). Only request a subtitle track from that list. Result files are served as attachments and temporary files are deleted after transfer. Large downloads still run synchronously; progress tracking is not yet implemented.
