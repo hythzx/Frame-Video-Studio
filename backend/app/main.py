@@ -319,7 +319,12 @@ def subtitle_choices(data: dict) -> list:
 
 
 def audio_available(data: dict) -> bool:
-    return any(f.get("acodec") not in (None, "none") for f in (data.get("formats") or []))
+    return any(
+        f.get("acodec") not in (None, "none")
+        or (f.get("acodec") is None and f.get("vcodec") != "none"
+            and f.get("ext") == "mp4" and f.get("protocol") in ("https", "http"))
+        for f in (data.get("formats") or [])
+    )
 
 
 def choices(data: dict, platform: str) -> list:
