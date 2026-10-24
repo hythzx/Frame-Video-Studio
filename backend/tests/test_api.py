@@ -152,3 +152,44 @@ def test_extract_with_fake_data(monkeypatch):
 def test_download_rejects_bad_url():
     response = client.post("/api/download", json={"url": "https://example.com/", "format_id": "bad"})
     assert response.status_code == 422
+
+
+def test_subtitles_and_audio_metadata(monkeypatch):
+    monkeypatch.setattr(main, "extract", lambda url: {
+        "id": "abc", "title": "Test", "duration": 40,
+        "formats": [{"format_id": "140", "acodec": "mp4a.40.2", "vcodec": "none", "protocol": "https"}],
+        "subtitles": {"zh-Hans": [{"ext": "vtt", "url": "https://example.com/test.vtt"}]},
+        "automatic_captions": {"en": [{"ext": "vtt", "url": "https://example.com/auto.vtt"}]},
+    })
+    result = client.post("/api/extract", json={"url": "https://www.youtube.com/watch?v=abc"})
+    assert result.status_code == 200
+    assert result.json()["audio_available"] is True
+    assert result.json()["subtitles"] == [
+        {"language": "zh-Hans", "automatic": False},
+        {"language": "en", "automatic": True},
+    ]
+
+
+def test_audio_and_subtitle_validation():
+    url = "https://www.youtube.com/watch?v=abc"
+    assert client.post("/api/audio", json={"url": url, "audio_format": "exe"}).status_code == 422
+    assert client.post("/api/subtitle", json={
+        "url": url, "language": "../en", "subtitle_format": "srt"
+    }).status_code == 422
+    assert client.post("/api/subtitle", json={
+        "url": url, "language": "en", "subtitle_format": "pdf"
+    }).status_code == 422
+
+
+def test_unavailable_subtitle_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "extract", lambda url: {"subtitles": {}, "automatic_captions": {}})
+    import pytest
+    with pytest.raises(ValueError, match="字幕轨道不可用"):
+        main._run_subtitle("https://x.com/i/status/123", "en", "srt", False, tmp_path)
+
+
+def test_unavailable_audio_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "extract", lambda url: {"formats": []})
+    import pytest
+    with pytest.raises(ValueError, match="音轨"):
+        main._run_audio("https://x.com/i/status/123", "mp3", tmp_path)
