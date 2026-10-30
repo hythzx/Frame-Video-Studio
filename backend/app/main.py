@@ -500,3 +500,6 @@ async def download_subtitle(request: SubtitleRequest):
 
 from .bookmarks import router as bookmarks_router
 app.include_router(bookmarks_router)
+
+from .tasks.routes import router as tasks_router
+app.include_router(tasks_router)

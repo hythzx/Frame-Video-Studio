@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 RUN useradd --uid 10001 --create-home appuser
+# 预建数据目录并赋属主：named volume 首次挂载时继承此属主，非 root 进程可写。
+RUN mkdir -p /data && chown appuser /data
 USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
