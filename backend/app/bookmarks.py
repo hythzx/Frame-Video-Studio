@@ -142,8 +142,9 @@ def _serialize_tweet_result(result: dict) -> dict | None:
     cover = next((m.get("media_url") for m in videos if m.get("media_url")), None)
     if not cover:
         cover = next((m.get("media_url") for m in media if m.get("media_url")), None)
-    user = (((result.get("core") or {}).get("user_results") or {}).get("result")
-            or {}).get("legacy") or {}
+    # 旧响应用户字段在 user_results.result.legacy；新响应拆平到 result.core。
+    user_wrapper = ((result.get("core") or {}).get("user_results") or {}).get("result") or {}
+    user = user_wrapper.get("legacy") or user_wrapper.get("core") or {}
     return {
         "id": tweet_id,
         "text": str(tweet.get("full_text") or "")[:800],

@@ -53,6 +53,17 @@ def test_serialize_video_tweet():
     assert item["author"] == "Example"
 
 
+def test_serialize_flat_user_shape():
+    # 新版 Bookmarks 响应把用户字段拆平到 user_results.result.core。
+    result = {
+        "rest_id": "987654321098765432",
+        "legacy": {"full_text": "flat"},
+        "core": {"user_results": {"result": {"core": {"name": "Flat", "screen_name": "flatuser"}}}},
+    }
+    item = bookmarks._serialize_tweet_result(result)
+    assert item["username"] == "flatuser" and item["author"] == "Flat"
+
+
 def test_serialize_text_only_tweet():
     result = {"rest_id": "1234567890", "legacy": {"full_text": "text"},
               "core": {"user_results": {"result": {"legacy": {}}}}}
