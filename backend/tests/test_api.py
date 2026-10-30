@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
-from app import main
+from app import bookmarks, main
 
 client = TestClient(main.app)
 
@@ -193,3 +193,31 @@ def test_unavailable_audio_rejected(monkeypatch, tmp_path):
     import pytest
     with pytest.raises(ValueError, match="音轨"):
         main._run_audio("https://x.com/i/status/123", "mp3", tmp_path)
+
+
+def test_parse_bookmarks_response():
+    sample = {
+        "data": {"bookmark_timeline_v2": {"timeline": {"instructions": [
+            {"type": "TimelineAddEntries", "entries": [
+                {"entryId": "tweet-111111111111111111", "content": {"entryType": "TimelineTimelineItem",
+                 "itemContent": {"tweet_results": {"result": {
+                     "legacy": {"full_text": "hello video", "extended_entities": {"media": [
+                         {"type": "video", "media_url": "https://pbs.twimg.com/cover.jpg"}]}},
+                     "core": {"user_results": {"result": {"legacy": {
+                         "screen_name": "alice", "name": "Alice"}}}},
+                     "rest_id": "111111111111111111"}}}}},
+                {"entryId": "tweet-222", "content": {"entryType": "TimelineTimelineItem",
+                 "itemContent": {"tweet_results": {"result": {
+                     "legacy": {"full_text": "text only"},
+                     "core": {"user_results": {"result": {"legacy": {
+                         "screen_name": "bob", "name": "Bob"}}}},
+                     "rest_id": "222"}}}}},
+                {"entryId": "cursor-bottom-333", "content": {"entryType": "TimelineTimelineCursor",
+                 "value": "next-cursor-value"}},
+            ]},
+        ]}}}}
+    items, cursor = bookmarks._parse_bookmarks_response(sample)
+    assert cursor == "next-cursor-value"
+    assert [i["id"] for i in items] == ["111111111111111111"]
+    assert items[0]["has_video"] and items[0]["username"] == "alice"
+    assert items[0]["thumbnail"] == "https://pbs.twimg.com/cover.jpg"

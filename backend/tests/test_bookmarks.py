@@ -39,10 +39,14 @@ def test_cookie_parser_never_exposes_cookies_in_response(monkeypatch):
 
 
 def test_serialize_video_tweet():
-    media = SimpleNamespace(type="video", media_url="https://pbs.twimg.com/media/abc.jpg")
-    user = SimpleNamespace(name="Example", screen_name="example")
-    tweet = SimpleNamespace(id="123456789012345", full_text="hello", media=[media], user=user, created_at="today")
-    item = bookmarks._serialize_tweet(tweet)
+    result = {
+        "rest_id": "123456789012345",
+        "legacy": {"full_text": "hello", "created_at": "today",
+                   "extended_entities": {"media": [
+                       {"type": "video", "media_url": "https://pbs.twimg.com/media/abc.jpg"}]}},
+        "core": {"user_results": {"result": {"legacy": {"name": "Example", "screen_name": "example"}}}},
+    }
+    item = bookmarks._serialize_tweet_result(result)
     assert item["id"] == "123456789012345"
     assert item["has_video"]
     assert item["url"] == "https://x.com/i/status/123456789012345"
@@ -50,8 +54,9 @@ def test_serialize_video_tweet():
 
 
 def test_serialize_text_only_tweet():
-    tweet = SimpleNamespace(id="1234567890", full_text="text", media=[], user=None)
-    assert bookmarks._serialize_tweet(tweet)["has_video"] is False
+    result = {"rest_id": "1234567890", "legacy": {"full_text": "text"},
+              "core": {"user_results": {"result": {"legacy": {}}}}}
+    assert bookmarks._serialize_tweet_result(result)["has_video"] is False
 
 
 def test_bookmark_list_endpoint_with_mock(monkeypatch):
@@ -96,38 +101,32 @@ def test_fetch_page_uses_cookies_and_cursor(monkeypatch):
     monkeypatch.setattr(bookmarks, "_LAST_PAGE_REQUEST", 0.0)
     captured = {}
 
-    class FakeHTTP:
-        async def aclose(self):
-            captured["closed"] = True
+    def fake_request(cursor, count):
+        captured["cursor"] = cursor
+        captured["count"] = count
+        headers = bookmarks._bookmarks_headers()
+        captured["cookie_has_auth"] = "auth_token=unit-test" in headers["cookie"]
+        captured["csrf"] = headers["x-csrf-token"]
+        return {"data": {"bookmark_timeline_v2": {"timeline": {"instructions": [
+            {"type": "TimelineAddEntries", "entries": [
+                {"entryId": "tweet-1234567890", "content": {"entryType": "TimelineTimelineItem",
+                 "itemContent": {"tweet_results": {"result": {
+                     "rest_id": "1234567890",
+                     "legacy": {"full_text": "Test", "created_at": "now"},
+                     "core": {"user_results": {"result": {"legacy": {
+                         "name": "Tester", "screen_name": "tester"}}}}}}}}},
+                {"entryId": "cursor-bottom-x", "content": {"entryType": "TimelineTimelineCursor",
+                 "value": "cursor-two"}},
+            ]}]}}}}
 
-    class FakeClient:
-        http = FakeHTTP()
-
-        def set_cookies(self, cookies, clear_cookies=False):
-            captured["cookies"] = cookies
-            captured["clear"] = clear_cookies
-
-        async def get_bookmarks(self, count=20, cursor=None):
-            captured["count"] = count
-            captured["cursor"] = cursor
-            tweet = SimpleNamespace(
-                id="1234567890", full_text="Test", media=[],
-                user=SimpleNamespace(name="Tester", screen_name="tester"),
-                created_at="now",
-            )
-            class Result(list):
-                next_cursor = "cursor-two"
-            return Result([tweet])
-
-    monkeypatch.setattr(bookmarks, "_new_client", FakeClient)
+    monkeypatch.setattr(bookmarks, "_request_bookmarks_page", fake_request)
     result = asyncio.run(bookmarks._fetch_page("cursor-one", 15))
     assert result["next_cursor"] == "cursor-two"
     assert result["items"][0]["id"] == "1234567890"
-    assert captured["cookies"]["auth_token"] == "unit-test"
-    assert captured["clear"] is True
     assert captured["cursor"] == "cursor-one"
     assert captured["count"] == 15
-    assert captured["closed"] is True
+    assert captured["cookie_has_auth"] is True
+    assert captured["csrf"] == "unit-csrf"
 
 
 def test_fetch_page_cooldown(monkeypatch):
