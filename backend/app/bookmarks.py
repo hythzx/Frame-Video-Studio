@@ -107,7 +107,7 @@ def _bookmarks_headers() -> dict:
     cookies = _cookie_pairs()
     # GET 请求不可携带 content-type 等 POST 语义头，X 的反爬会直接 403。
     return {
-        "authorization": _BEARER_TOKEN,
+        "authorization": f"Bearer {_BEARER_TOKEN}",
         "x-csrf-token": cookies.get("ct0", ""),
         "cookie": f"auth_token={cookies.get('auth_token', '')}; ct0={cookies.get('ct0', '')}",
         "x-twitter-auth-type": "OAuth2Session",
