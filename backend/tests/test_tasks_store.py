@@ -72,3 +72,12 @@ def test_file_path_convention(tmp_path):
     store = make_store(tmp_path)
     path = store.file_path("abc-task")
     assert str(path).endswith("files/abc-task/output.mp4")
+
+
+def test_title_saved_in_resolve_phase(tmp_path):
+    store = make_store(tmp_path)
+    task = store.create(kind="video", url="u", platform="youtube", format_id="f")
+    # 创建时标题未知（202 秒回），解析阶段由 worker 补写。
+    assert store.get(task["id"])["title"] is None
+    store.set_title(task["id"], "Big Buck Bunny")
+    assert store.get(task["id"])["title"] == "Big Buck Bunny"

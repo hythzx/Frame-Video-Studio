@@ -77,3 +77,18 @@ def test_recovered_task_is_claimable_again(store, monkeypatch):
     monkeypatch.setattr(main, "download_video", fake_download)
     assert worker.process_next_task(store) is True
     assert store.get(task["id"])["status"] == "ready"
+
+
+def test_title_persisted_from_extract(store, monkeypatch):
+    task = store.create(kind="video", url="u", platform="youtube", format_id="f")
+    monkeypatch.setattr(main, "extract", lambda url: {"title": "Big Buck Bunny"})
+    monkeypatch.setattr(main, "choices", lambda data, platform: [{"id": "f"}])
+
+    def fake_download(url, format_id, folder, platform):
+        output = folder / "video.mp4"
+        output.write_bytes(b"x")
+        return output
+
+    monkeypatch.setattr(main, "download_video", fake_download)
+    worker.process_next_task(store)
+    assert store.get(task["id"])["title"] == "Big Buck Bunny"

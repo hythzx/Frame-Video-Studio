@@ -78,6 +78,18 @@ async def task_status(task_id: str):
     return body
 
 
+_FILENAME_UNSAFE = re.compile(r'[\\/:*?"<>|\r\n\t]+')
+
+
+def _download_filename(task: dict) -> str:
+    """以视频标题命名下载文件；无标题或净化后为空时回退到任务 ID。"""
+    title = _FILENAME_UNSAFE.sub(" ", task.get("title") or "").strip()
+    title = re.sub(r"\s+", " ", title)[:80].strip(" .")
+    if not title:
+        return f"video-{task['id']}.mp4"
+    return f"{title}.mp4"
+
+
 @router.get("/{task_id}/file")
 async def task_file(task_id: str):
     store = get_store()
@@ -90,4 +102,4 @@ async def task_file(task_id: str):
     if not path.is_file():
         raise HTTPException(410, "文件已过期或不存在。")
     return FileResponse(path, media_type="video/mp4",
-                        filename=f"video-{task['id']}.mp4")
+                        filename=_download_filename(task))

@@ -20,6 +20,7 @@ def _execute(store: TaskStore, task: dict) -> None:
         # 解析阶段：提前校验格式可用性，快速失败，不进入下载。
         store.update_status(task_id, RESOLVING)
         data = app_main.extract(task["url"])
+        store.set_title(task_id, str(data.get("title") or ""))
         formats = app_main.choices(data, task["platform"])
         if task["format_id"] not in {x["id"] for x in formats}:
             raise ValueError("该画质已不可用，请重新解析。")

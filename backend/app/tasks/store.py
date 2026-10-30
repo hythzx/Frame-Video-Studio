@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     url TEXT NOT NULL,
     platform TEXT NOT NULL,
     format_id TEXT NOT NULL,
+    title TEXT,
     error TEXT,
     file_size INTEGER,
     idempotency_key TEXT UNIQUE,
@@ -31,7 +32,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 """
 
 _TASK_COLUMNS = ("id", "status", "kind", "url", "platform", "format_id",
-                 "error", "file_size", "created_at", "updated_at")
+                 "title", "error", "file_size", "created_at", "updated_at")
 
 
 def _now() -> str:
@@ -46,6 +47,11 @@ class TaskStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(_SCHEMA)
+            # 轻量迁移：为既有数据库补齐后加的列。
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN title TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
@@ -90,6 +96,11 @@ class TaskStore:
         with self._connect() as conn:
             conn.execute("UPDATE tasks SET status = ?, error = ?, updated_at = ? WHERE id = ?",
                          (status, error, _now(), task_id))
+
+    def set_title(self, task_id: str, title: str) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?",
+                         (title[:200], _now(), task_id))
 
     def claim_next(self) -> dict | None:
         """原子认领最早的 queued 任务并置为 resolving；无任务时返回 None。"""

@@ -83,3 +83,32 @@ def test_file_download_supports_range(client, tmp_path):
     invalid = client.get(f"/api/tasks/{task['id']}/file",
                          headers={"Range": "bytes=99-200"})
     assert invalid.status_code in (416, 200)
+
+
+def test_file_named_after_video_title(client):
+    store = task_routes._store
+    task = store.create(kind="video", url="u", platform="youtube", format_id="f")
+    store.set_title(task["id"], "Big Buck Bunny: 完整版 1080p")
+    output = store.file_path(task["id"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"data")
+    store.complete(task["id"], file_size=4)
+
+    res = client.get(f"/api/tasks/{task['id']}/file")
+    assert res.status_code == 200
+    disposition = res.headers["content-disposition"]
+    from urllib.parse import unquote
+    assert "Big Buck Bunny" in unquote(disposition)
+    assert "1080p" in unquote(disposition)
+    assert "/" not in unquote(disposition).split("''")[-1]
+
+
+def test_file_falls_back_to_task_id_without_title(client):
+    store = task_routes._store
+    task = store.create(kind="video", url="u", platform="x", format_id="f")
+    output = store.file_path(task["id"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"data")
+    store.complete(task["id"], file_size=4)
+    res = client.get(f"/api/tasks/{task['id']}/file")
+    assert f"video-{task['id']}.mp4" in res.headers["content-disposition"]
