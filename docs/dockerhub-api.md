@@ -113,3 +113,16 @@ GitHub Actions publishes `latest` from `main`, commit SHA tags, and semantic ver
 **Source:** https://github.com/hythzx/Twitter-Video-Downloader
 
 **Deployment reference:** [compose.deploy.yaml](https://github.com/hythzx/Twitter-Video-Downloader/blob/main/compose.deploy.yaml)
+
+## Optional: Private X bookmarks
+
+This API image also includes an **opt-in, read-only X bookmarks browser** powered by Twikit. It reuses the server's own `TWITTER_COOKIES` (`auth_token` and `ct0`) instead of using the paid X developer API.
+
+Set **both** `TWITTER_COOKIES` and a randomly generated `FRAME_ACCESS_TOKEN` (minimum 20 characters) in your **server-local** `.env` and restart the service. The token is a separate app access key, **not** an X Cookie.
+
+- `GET /api/bookmarks?count=20&cursor=...` — one page of your own private bookmarks.
+- `POST /api/bookmarks/download` — select 1–5 numeric Tweet IDs for MP4 or ZIP download.
+
+Both require the request header `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Access is disabled when the token or X cookies are missing. No bookmarks are permanently stored. The unofficial interface can change and may be subject to account rate limits. Do not expose your credentials or open the application to the public without additional access controls.
+
+[Setup and security details](https://github.com/hythzx/Twitter-Video-Downloader#private-x-bookmarks-cookie-based-optional).
