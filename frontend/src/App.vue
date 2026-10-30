@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue'
+import BookmarksView from './BookmarksView.vue'
 import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, Clipboard, Clock3, Download, ExternalLink, Film, Link2, LoaderCircle, LockKeyhole, Play, ShieldCheck, Sparkles, X, Youtube, Globe2 } from 'lucide-vue-next'
 
+const activePage = ref('download')
 const link = ref('')
 const loading = ref(false)
 const downloading = ref(false)
@@ -120,6 +122,11 @@ function useExample(platform) {
     </header>
 
     <main class="wrap">
+      <nav class="main-navigation" aria-label="主导航">
+        <button type="button" :class="{active:activePage==='download'}" @click="activePage='download'"><Film :size="16"/> 视频下载</button>
+        <button type="button" :class="{active:activePage==='bookmarks'}" @click="activePage='bookmarks'"><LockKeyhole :size="16"/> 我的收藏</button>
+      </nav>
+      <template v-if="activePage === 'download'">
       <section class="hero">
         <div class="eyebrow"><Sparkles :size="14"/> ONE PLACE FOR YOUR VIDEOS <span class="eyebrow-line"></span> FRAME STUDIO</div>
         <h1>Save what matters<span class="accent">.</span><br/><span class="soft">From anywhere you love.</span></h1>
@@ -229,6 +236,8 @@ function useExample(platform) {
         <div><span class="feature-icon"><ArrowDownToLine :size="17"/></span><span><strong>高清画质</strong><small>多分辨率可选，自动合并音视频</small></span></div>
         <div><span class="feature-icon"><LockKeyhole :size="17"/></span><span><strong>私人收藏空间</strong><small>自托管部署，无需注册账号</small></span></div>
       </div>
+      </template>
+      <BookmarksView v-else/>
     </main>
     <footer class="footer wrap"><span>© {{ new Date().getFullYear() }} FRAME STUDIO</span><span>MADE FOR THE MOMENTS WORTH KEEPING <span class="footer-star">✳</span></span></footer>
   </div>
