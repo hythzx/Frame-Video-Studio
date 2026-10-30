@@ -72,7 +72,7 @@ async def task_status(task_id: str):
     if not task:
         raise HTTPException(404, "任务不存在")
     body = {k: task[k] for k in ("id", "status", "kind", "url", "platform",
-                                 "format_id", "error", "file_size",
+                                 "format_id", "title", "error", "file_size",
                                  "created_at", "updated_at")}
     body["download_url"] = f"/api/tasks/{task['id']}/file" if task["status"] == READY else None
     return body
