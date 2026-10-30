@@ -17,13 +17,11 @@ def _execute(store: TaskStore, task: dict) -> None:
     work_dir = store.work_dir(task_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
-        # 解析阶段：提前校验格式可用性，快速失败，不进入下载。
+        # 解析阶段：提取元数据（标题供文件命名）；格式匹配与降级
+        # 由 download_video 在其自身的单次提取内完成，避免跨提取 ID 漂移。
         store.update_status(task_id, RESOLVING)
         data = app_main.extract(task["url"])
         store.set_title(task_id, str(data.get("title") or ""))
-        formats = app_main.choices(data, task["platform"])
-        if task["format_id"] not in {x["id"] for x in formats}:
-            raise ValueError("该画质已不可用，请重新解析。")
 
         store.update_status(task_id, DOWNLOADING)
         output = app_main.download_video(task["url"], task["format_id"], work_dir, task["platform"])

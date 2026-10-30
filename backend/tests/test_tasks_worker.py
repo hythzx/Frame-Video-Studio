@@ -34,20 +34,6 @@ def test_successful_task_flows_to_ready(store, monkeypatch):
     assert store.file_path(task["id"]).read_bytes() == b"video-bytes"
 
 
-def test_unavailable_format_fails_fast_without_download(store, monkeypatch):
-    task = store.create(kind="video", url="u", platform="x", format_id="gone")
-    monkeypatch.setattr(main, "extract", lambda url: {"title": "t"})
-    monkeypatch.setattr(main, "choices", lambda data, platform: [
-        {"id": "http-2176", "label": "720p"}])
-    downloaded = []
-    monkeypatch.setattr(main, "download_video",
-                        lambda *a, **k: downloaded.append(a) or (_ for _ in ()).throw(AssertionError("不应下载")))
-    assert worker.process_next_task(store) is True
-    failed = store.get(task["id"])
-    assert failed["status"] == "failed" and "画质" in failed["error"]
-    assert not downloaded
-
-
 def test_download_error_marks_failed(store, monkeypatch):
     task = store.create(kind="video", url="u", platform="x", format_id="f")
     monkeypatch.setattr(main, "extract", lambda url: {"title": "t"})
@@ -92,3 +78,24 @@ def test_title_persisted_from_extract(store, monkeypatch):
     monkeypatch.setattr(main, "download_video", fake_download)
     worker.process_next_task(store)
     assert store.get(task["id"])["title"] == "Big Buck Bunny"
+
+
+def test_format_fallback_via_download_video(store, monkeypatch):
+    # YouTube 格式 ID 在多次提取间漂移：worker 不做精确校验，
+    # 由 download_video 内部按分辨率就近降级。
+    task = store.create(kind="video", url="u", platform="youtube", format_id="136+140")
+    monkeypatch.setattr(main, "extract", lambda url: {"title": "Big Buck Bunny"})
+    monkeypatch.setattr(main, "choices", lambda data, platform: [
+        {"id": "135+140", "height": 480}, {"id": "134+140", "height": 360}])
+    captured = {}
+
+    def fake_download(url, format_id, folder, platform):
+        captured["format"] = format_id
+        output = folder / "video.mp4"
+        output.write_bytes(b"x")
+        return output
+
+    monkeypatch.setattr(main, "download_video", fake_download)
+    worker.process_next_task(store)
+    assert captured["format"] == "136+140"
+    assert store.get(task["id"])["status"] == "ready"

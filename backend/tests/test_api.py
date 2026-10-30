@@ -221,3 +221,15 @@ def test_parse_bookmarks_response():
     assert [i["id"] for i in items] == ["111111111111111111"]
     assert items[0]["has_video"] and items[0]["username"] == "alice"
     assert items[0]["thumbnail"] == "https://pbs.twimg.com/cover.jpg"
+
+
+def test_resolve_format_fallback_and_exact():
+    formats = [
+        {"id": "248-sr+140-drc", "height": 1080},
+        {"id": "136+140", "height": 720},
+        {"id": "135+140", "height": 480},
+    ]
+    assert main.resolve_requested_format("136+140", formats) == "136+140"
+    # 请求的 720p 已不存在：降级到不超过请求分辨率的最近画质。
+    assert main.resolve_requested_format("999+140", formats) == "248-sr+140-drc"
+    assert main.resolve_requested_format("gone+gone", formats) is None

@@ -362,15 +362,48 @@ async def inspect_video(request: VideoRequest):
     }
 
 
+def resolve_requested_format(format_id: str, formats: list) -> str | None:
+    """把请求的画质解析为当前提取结果中可用的格式。
+
+    YouTube 等平台的格式 ID（含 -drc 等后缀）在多次提取之间并不稳定：
+    精确匹配失败时，按请求的视频流分辨率就近降级（不超过请求值），
+    而不是直接报"画质不可用"。
+    """
+    ids = {x["id"] for x in formats}
+    if format_id in ids:
+        return format_id
+    parts = format_id.split("+")
+    requested_video = parts[0]
+    requested_audio = parts[1] if len(parts) > 1 else None
+    requested_height = next(
+        (f["height"] for f in formats if f["id"].split("+")[0] == requested_video and f["height"]),
+        None)
+    with_height = [f for f in formats if f["height"]]
+    # 降级前提：请求中至少音频流仍存在；音视频流均已消失则无有意义的替代。
+    audio_exists = requested_audio and any(
+        f["id"].split("+")[-1] == requested_audio for f in with_height)
+    if requested_height:
+        # 视频流仍在：就近降级到不超过请求分辨率的最近画质。
+        candidates = [f for f in with_height if f["height"] <= requested_height]
+        best = max(candidates or with_height, key=lambda f: f["height"], default=None)
+    elif audio_exists:
+        # 视频流已不存在、无法得知请求高度：提供当前最高可用画质。
+        best = max(with_height, key=lambda f: f["height"], default=None)
+    else:
+        best = None
+    return best["id"] if best else None
+
+
 def download_video(url: str, format_id: str, folder: Path, platform: str) -> Path:
     # Re-extract server-side: never accept a user-supplied CDN address.
     data = extract(url)
-    permitted = {x["id"] for x in choices(data, platform)}
-    if format_id not in permitted:
-        raise ValueError("该画质已不可用，请重新解析。")
+    formats = choices(data, platform)
+    resolved = resolve_requested_format(format_id, formats)
+    if not resolved:
+        raise ValueError("该画质已不可用，且没有可降级的替代画质，请重新解析。")
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
-        "format": format_id, "outtmpl": str(folder / "video.%(ext)s"),
+        "format": resolved, "outtmpl": str(folder / "video.%(ext)s"),
         "merge_output_format": "mp4",
         "max_filesize": MAX_BYTES, "socket_timeout": 15,
         "retries": 2, "continuedl": False, "nopart": True,
