@@ -1,8 +1,14 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ArrowDownToLine, ArrowLeft, ArrowRight, Bookmark, Check, ExternalLink, Film, LoaderCircle, LockKeyhole, RefreshCw, ShieldCheck } from 'lucide-vue-next'
 
-const accessToken = ref('')
+const TOKEN_STORAGE_KEY = 'frame-access-token'
+const accessToken = ref(localStorage.getItem(TOKEN_STORAGE_KEY) || '')
+// 单人自用：密钥只记忆在本机浏览器，接口保护不变（每次请求仍需携带）。
+watch(accessToken, value => {
+  if (value.trim()) localStorage.setItem(TOKEN_STORAGE_KEY, value.trim())
+  else localStorage.removeItem(TOKEN_STORAGE_KEY)
+})
 const loading = ref(false)
 const downloading = ref(false)
 const error = ref('')
@@ -117,7 +123,7 @@ async function save(ids) {
           {{ loading ? '读取中…' : '读取收藏' }}
         </button>
       </div>
-      <p>X Cookie 仅保存在服务器环境变量中；本页输入的是单独生成的访问密钥，刷新后不会保存。</p>
+      <p>X Cookie 仅保存在服务器环境变量中；访问密钥输入一次后会记住在你的浏览器本地（localStorage），每次请求仍需携带、不会发给任何第三方。清除浏览器站点数据即可忘记密钥。</p>
     </div>
 
     <div class="bookmark-toolbar">
