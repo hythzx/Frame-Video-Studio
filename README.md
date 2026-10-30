@@ -1,6 +1,6 @@
 # Frame — Twitter Video Downloader
 
-A polished, self-hosted video downloader for **X / Twitter, YouTube and Bilibili**, for personal use. Built with Vue 3, FastAPI, yt-dlp and Docker Compose. No database, no accounts, no analytics.
+A polished, self-hosted video downloader for **X / Twitter, YouTube and Bilibili**, for personal use. Built with Vue 3, FastAPI, yt-dlp and Docker Compose. No database or analytics. An optional personal X cookie-backed bookmarks browser requires explicit access control.
 
 ## Features
 - Paste a public post/video URL from X/Twitter, YouTube or Bilibili; extract title, thumbnail, duration and available video resolutions.
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Frontend (requires Node.js 22):
+Frontend (requires Node.js 24):
 
 ```bash
 cd frontend
@@ -131,3 +131,45 @@ Content-Type: application/json
 ```
 
 `/api/extract` now also returns `audio_available` and `subtitles` (objects with `language` and `automatic`). Only request a subtitle track from that list. Result files are served as attachments and temporary files are deleted after transfer. Large downloads still run synchronously; progress tracking is not yet implemented.
+
+
+## Private X bookmarks (cookie-based; optional)
+
+Frame includes a **My Bookmarks** menu to browse your own X bookmarks without the paid X developer API. It uses the unofficial [Twikit](https://github.com/d60/twikit) web client for **read-only** bookmark retrieval, then reuses yt-dlp to download video media.
+
+> **Important:** This integration is unofficial and can break when X changes its internal API. X may rate-limit requests or restrict accounts. Read only your own bookmarks, avoid excessive requests, and use it subject to X's terms. No X password, account login automation or third-party cookie storage is involved.
+
+### Setup
+
+1. Log into **your own** X account in a browser. Using its developer tools on `x.com`, find the `auth_token` and `ct0` cookie **values** (optionally `twid`). Treat them like a login password. Do not paste them into a public issue, chat, screenshot, or GitHub file.
+2. In your **server-local** `.env` file, set `TWITTER_COOKIES` to `auth_token=<value>; ct0=<value>`. The existing yt-dlp download functions will reuse these cookies.
+3. Generate a separate private app access key on your own machine:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   Save the generated value as `FRAME_ACCESS_TOKEN` in `.env`. At least 20 characters are required. **This is not your X Cookie**.
+4. Redeploy: `docker compose -f compose.deploy.yaml up -d` (or `docker compose up -d` if using the local image setup).
+5. Open Frame → **我的收藏**, enter the `FRAME_ACCESS_TOKEN`, and click **读取收藏**.
+
+The browser sends only the Frame access key in the `X-Frame-Token` request header; X cookies stay on the server. The access key is kept in page memory and is not written to localStorage. The server does not persist a bookmarks database.
+
+### Available operations
+
+- Manually fetch one page at a time (20 bookmarks per page); next/previous cursor pagination.
+- View original Post, author, text and media thumbnail; filter posts containing video/animated GIF.
+- Download one video as MP4, or up to **5 selected video Posts** as a ZIP. A ZIP may include `failed-ids.txt` for items that were inaccessible or had no downloadable MP4.
+- Requests are sequential and limited; the app does **not** automatically crawl every bookmark or change any bookmark.
+- Batch downloads are synchronous and use server RAM-backed `/tmp` storage. Archive output is limited to 600 MiB and large videos may fail. This is not a persistent download task queue.
+
+### Private bookmarks API
+
+All private routes require `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Without a configured key, these endpoints are disabled.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/bookmarks?count=20&cursor=...` | Paginated private bookmarks (cursor optional) |
+| `POST /api/bookmarks/download` | JSON `{"ids":["1234567890123456789"]}`; one item → MP4; multiple items → ZIP |
+
+**Security:** Do not expose Frame to the public internet without HTTPS, authentication and rate controls. `FRAME_ACCESS_TOKEN` protects the new bookmarks endpoints; the existing general downloader endpoints are not protected by this key, so protect the **whole site** at your reverse proxy if you expose it beyond localhost. Do not use browser network traffic export files containing Cookie headers as issues or debugging attachments.
