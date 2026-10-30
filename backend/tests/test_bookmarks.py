@@ -89,3 +89,52 @@ def test_batch_archive_with_mock_downloads(monkeypatch, tmp_path):
     assert output.suffix == ".zip"
     with zipfile.ZipFile(output) as archive:
         assert set(archive.namelist()) == {"x-1234567890.mp4", "x-9876543210.mp4"}
+
+def test_fetch_page_uses_cookies_and_cursor(monkeypatch):
+    import asyncio
+    setup_env(monkeypatch)
+    monkeypatch.setattr(bookmarks, "_LAST_PAGE_REQUEST", 0.0)
+    captured = {}
+
+    class FakeHTTP:
+        async def aclose(self):
+            captured["closed"] = True
+
+    class FakeClient:
+        http = FakeHTTP()
+
+        def set_cookies(self, cookies, clear_cookies=False):
+            captured["cookies"] = cookies
+            captured["clear"] = clear_cookies
+
+        async def get_bookmarks(self, count=20, cursor=None):
+            captured["count"] = count
+            captured["cursor"] = cursor
+            tweet = SimpleNamespace(
+                id="1234567890", full_text="Test", media=[],
+                user=SimpleNamespace(name="Tester", screen_name="tester"),
+                created_at="now",
+            )
+            class Result(list):
+                next_cursor = "cursor-two"
+            return Result([tweet])
+
+    monkeypatch.setattr(bookmarks, "_new_client", FakeClient)
+    result = asyncio.run(bookmarks._fetch_page("cursor-one", 15))
+    assert result["next_cursor"] == "cursor-two"
+    assert result["items"][0]["id"] == "1234567890"
+    assert captured["cookies"]["auth_token"] == "unit-test"
+    assert captured["clear"] is True
+    assert captured["cursor"] == "cursor-one"
+    assert captured["count"] == 15
+    assert captured["closed"] is True
+
+
+def test_fetch_page_cooldown(monkeypatch):
+    import asyncio
+    import pytest
+    setup_env(monkeypatch)
+    monkeypatch.setattr(bookmarks, "_LAST_PAGE_REQUEST", float("inf"))
+    with pytest.raises(Exception) as error:
+        asyncio.run(bookmarks._fetch_page(None, 20))
+    assert getattr(error.value, "status_code", None) == 429
