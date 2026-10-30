@@ -73,7 +73,7 @@ git pull
 docker compose up -d --build
 ```
 
-For extractor compatibility, rebuild regularly so that a current yt-dlp release gets installed. If you need private posts, login cookies, HLS merge support, asynchronous job queues or large-file streaming, those are separate features and intentionally not included by default.
+For extractor compatibility, rebuild regularly so that a current yt-dlp release gets installed. Cookie-based private bookmark browsing is optional. HLS-only media, asynchronous job queues and large-file streaming are not implemented by default.
 
 
 ## Docker Hub automatic publishing
