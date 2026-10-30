@@ -7,6 +7,7 @@ const activePage = ref('download')
 const link = ref('')
 const loading = ref(false)
 const downloading = ref(false)
+const taskPhase = ref('')
 const error = ref('')
 const video = ref(null)
 const selected = ref('')
@@ -61,6 +62,37 @@ async function paste() {
   try { link.value = await navigator.clipboard.readText(); error.value = '' }
   catch { error.value = '无法读取剪贴板，请手动粘贴链接' }
 }
+const PHASE_TEXT = {
+  queued: '排队中…', resolving: '解析中…', downloading: '下载中…',
+  postprocessing: '合并中…',
+}
+
+async function createAndAwaitTask(payload) {
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': (crypto.randomUUID && crypto.randomUUID()) ||
+        'task-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(await getError(res))
+  const { id } = await res.json()
+  taskPhase.value = '排队中…'
+  // 服务端 Worker 执行下载；页面保持打开以便完成后自动保存文件。
+  for (;;) {
+    await new Promise(r => setTimeout(r, 2000))
+    const s = await fetch('/api/tasks/' + id, { cache: 'no-store' })
+    if (!s.ok) throw new Error('任务状态查询失败')
+    const task = await s.json()
+    taskPhase.value = PHASE_TEXT[task.status] || task.status
+    if (task.status === 'ready') return task.download_url
+    if (task.status === 'failed') throw new Error(task.error || '下载失败')
+    if (task.status === 'canceled') throw new Error('任务已取消')
+  }
+}
+
 async function download() {
   if (downloading.value || !video.value) return
   if (downloadMode.value === 'video' && !selected.value) return
@@ -70,11 +102,18 @@ async function download() {
   try {
     const mode = downloadMode.value
     const track = subtitleTracks.value[subtitleIndex.value]
-    const endpoint = mode === 'video' ? '/api/download' : mode === 'audio' ? '/api/audio' : '/api/subtitle'
+    if (mode === 'video') {
+      // 视频下载走任务接口：长耗时不再受 HTTP 超时限制，浏览器原生保存（支持断点续传）。
+      const url = await createAndAwaitTask({
+        url: video.value.url, kind: 'video', format_id: selected.value,
+      })
+      window.location.href = url
+      return
+    }
+    const endpoint = mode === 'audio' ? '/api/audio' : '/api/subtitle'
     const payload = { url: video.value.url }
-    if (mode === 'video') payload.format_id = selected.value
     if (mode === 'audio') payload.audio_format = audioFormat.value
-    if (mode === 'subtitle') Object.assign(payload, {
+    else Object.assign(payload, {
       language: track.language, automatic: track.automatic, subtitle_format: subtitleFormat.value
     })
     const res = await fetch(endpoint, {
@@ -84,7 +123,7 @@ async function download() {
     const blob = await res.blob()
     const href = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    const ext = mode === 'video' ? 'mp4' : mode === 'audio' ? audioFormat.value : subtitleFormat.value
+    const ext = mode === 'audio' ? audioFormat.value : subtitleFormat.value
     a.href = href
     a.download = (video.value.platform || 'video') + '-' +
       String(video.value.id || 'download').replace(/[^a-zA-Z0-9_-]/g, '_') +
@@ -94,7 +133,7 @@ async function download() {
     a.remove()
     setTimeout(() => URL.revokeObjectURL(href), 60000)
   } catch (e) { error.value = e.message || '下载失败' }
-  finally { downloading.value = false }
+  finally { downloading.value = false; taskPhase.value = '' }
 }
 function reset() { video.value = null; link.value = ''; error.value = ''; selected.value = '' }
 function useExample(platform) {
@@ -212,7 +251,7 @@ function useExample(platform) {
                 <button class="primary-btn download-btn" :disabled="downloading || (downloadMode === 'video' && !selected)" @click="download">
                   <LoaderCircle v-if="downloading" :size="18" class="spin"/>
                   <Download v-else :size="18"/>
-                  {{ downloading ? '正在准备文件，请勿关闭页面…' : downloadMode === 'video' ? '下载视频 · ' + (currentFormat?.label || 'MP4') : downloadMode === 'audio' ? '下载音频 · ' + audioFormat.toUpperCase() : '下载字幕 · ' + subtitleFormat.toUpperCase() }}
+                  {{ downloading ? (taskPhase || '正在准备…') + ' · 保持页面打开以自动保存' : downloadMode === 'video' ? '下载视频 · ' + (currentFormat?.label || 'MP4') : downloadMode === 'audio' ? '下载音频 · ' + audioFormat.toUpperCase() : '下载字幕 · ' + subtitleFormat.toUpperCase() }}
                 </button>
                 <p v-if="downloadMode === 'video' && video.platform !== 'x'" class="merge-hint">高画质视频可能需要等待服务端合并音视频流。</p>
               </div>
