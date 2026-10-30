@@ -496,3 +496,7 @@ async def download_subtitle(request: SubtitleRequest):
         _run_subtitle, request.url, f"subtitle.{request.subtitle_format}",
         "text/vtt" if request.subtitle_format == "vtt" else "application/x-subrip",
         request.language, request.subtitle_format, request.automatic)
+
+
+from .bookmarks import router as bookmarks_router
+app.include_router(bookmarks_router)
