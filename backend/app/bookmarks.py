@@ -105,6 +105,7 @@ def _require_access(x_frame_token: str | None = Header(default=None, alias="X-Fr
 
 def _bookmarks_headers() -> dict:
     cookies = _cookie_pairs()
+    # GET 请求不可携带 content-type 等 POST 语义头，X 的反爬会直接 403。
     return {
         "authorization": _BEARER_TOKEN,
         "x-csrf-token": cookies.get("ct0", ""),
@@ -113,8 +114,6 @@ def _bookmarks_headers() -> dict:
         "Referer": "https://x.com/i/bookmarks",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
-        "content-type": "application/json",
-        "x-twitter-client-language": "zh-cn",
     }
 
 
