@@ -115,3 +115,11 @@ GitHub Actions publishes `latest` from `main`, commit SHA tags, and semantic ver
 **Source:** https://github.com/hythzx/Twitter-Video-Downloader
 
 **Companion image:** `<dockerhub-username>/video-downloader-api`
+
+## Optional: My Bookmarks
+
+The Web interface includes a **我的收藏** tab for the X account configured on the **API server**. Enter the independently generated `FRAME_ACCESS_TOKEN` on that tab, then manually load your bookmarks, filter posts with videos, and download one MP4 or up to five videos as ZIP.
+
+**Do not paste X cookies into the browser interface.** The API container keeps `auth_token`/`ct0` on the server in `TWITTER_COOKIES`. The page's Frame access key is held only in memory. The unofficial X interface may change or rate-limit access.
+
+[Configuration guide](https://github.com/hythzx/Twitter-Video-Downloader#private-x-bookmarks-cookie-based-optional).
