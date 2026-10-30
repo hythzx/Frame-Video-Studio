@@ -129,6 +129,9 @@ def _bookmarks_url(cursor: str | None, count: int) -> str:
 
 
 def _serialize_tweet_result(result: dict) -> dict | None:
+    # 长推文被包装为 TweetWithVisibilityResults，正文在下一层。
+    if result.get("__typename") == "TweetWithVisibilityResults":
+        result = result.get("tweet") or {}
     tweet_id = str(result.get("rest_id") or "")
     if not _TWEET_ID.fullmatch(tweet_id):
         return None
