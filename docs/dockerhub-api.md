@@ -96,6 +96,10 @@ The bookmarks routes require `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Configure th
 
 [See the setup guide](https://github.com/hythzx/Frame-Video-Studio/blob/main/README.md).
 
+## License
+
+[MIT License](https://github.com/hythzx/Frame-Video-Studio/blob/main/LICENSE) · Copyright © 2026 hythzx. Third-party components follow their own licenses.
+
 ## Source and releases
 
 - **GitHub:** https://github.com/hythzx/Frame-Video-Studio
