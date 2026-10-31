@@ -154,7 +154,7 @@ For details, see the [project README](https://github.com/hythzx/Frame-Video-Stud
 - **Architectures:** `linux/amd64` and `linux/arm64`
 - **Tags:** `latest` from the `main` branch, commit SHA tags, and semantic version tags for `v*` releases
 
-Please review the repository for licensing details. Download only content that you have permission to access and save.
+**License: [MIT License](https://github.com/hythzx/Frame-Video-Studio/blob/main/LICENSE) · Copyright © 2026 hythzx.** You may use, modify, redistribute and use Frame Video Studio commercially subject to the MIT terms. Third-party dependencies retain their own licenses. Download only content that you have permission to access and save.
 
 ---
 
