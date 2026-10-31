@@ -4,6 +4,7 @@
 """
 import sqlite3
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 QUEUED = "queued"
@@ -13,6 +14,7 @@ READY = "ready"
 FAILED = "failed"
 CANCELED = "canceled"
 INTERRUPTED = "interrupted"
+EXPIRED = "expired"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -54,7 +56,7 @@ _HISTORY_COLUMNS = ("url", "platform", "video_id", "title", "description",
 
 
 def _now() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -169,6 +171,27 @@ class TaskStore:
 
     def fail(self, task_id: str, error: str) -> None:
         self.update_status(task_id, FAILED, error[:300])
+
+    def list_expired_ready(self, ttl_hours: float) -> list[dict]:
+        """ready 状态且完成时间早于 TTL 的任务（文件待清理）。"""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM tasks WHERE status = ?", (READY,)).fetchall()
+        expired = []
+        for row in rows:
+            try:
+                updated = datetime.fromisoformat(row["updated_at"])
+            except ValueError:
+                continue
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            if updated <= cutoff:
+                expired.append(dict(row))
+        return expired
+
+    def mark_expired(self, task_id: str) -> None:
+        # 状态机 ready → expired：保留任务元数据，文件由清理器删除。
+        self.update_status(task_id, EXPIRED)
 
     def recover_running(self) -> list[dict]:
         """Worker 启动恢复：运行中被中断的任务标记 interrupted 并重新排队。"""

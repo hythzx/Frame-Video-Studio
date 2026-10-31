@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .store import READY, TaskStore
+from .store import EXPIRED, READY, TaskStore
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -97,6 +97,8 @@ async def task_file(task_id: str):
     task = store.get(_validate_id(task_id))
     if not task:
         raise HTTPException(404, "任务不存在")
+    if task["status"] == EXPIRED:
+        raise HTTPException(410, "文件已过期清理，请重新创建下载任务。")
     if task["status"] != READY:
         raise HTTPException(409, "任务尚未完成，文件不可下载。")
     path = store.file_path(task["id"])

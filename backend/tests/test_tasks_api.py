@@ -226,3 +226,14 @@ def test_thumbnail_localized_to_own_origin(client, tmp_path, monkeypatch):
     assert res.json()["thumbnail"] == "/api/covers/BV1GJ411x7h7.jpg"
     assert captured["value"] == "/api/covers/BV1GJ411x7h7.jpg"
     assert (tmp_path / "covers" / "BV1GJ411x7h7.jpg").read_bytes() == b"jpeg-bytes"
+
+
+def test_expired_task_file_returns_410(client, tmp_path):
+    store = task_routes._store
+    task = store.create(kind="video", url="u", platform="x", format_id="f")
+    output = store.file_path(task["id"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"data")
+    store.mark_expired(task["id"])
+    res = client.get(f"/api/tasks/{task['id']}/file")
+    assert res.status_code == 410

@@ -36,6 +36,16 @@ def _execute(store: TaskStore, task: dict) -> None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def cleanup_expired_files(store: TaskStore, ttl_hours: float) -> int:
+    """删除超过保留时长的完成文件，任务标记 expired（元数据保留）。"""
+    removed = 0
+    for task in store.list_expired_ready(ttl_hours=ttl_hours):
+        shutil.rmtree(store.file_path(task["id"]).parent, ignore_errors=True)
+        store.mark_expired(task["id"])
+        removed += 1
+    return removed
+
+
 def process_next_task(store: TaskStore) -> bool:
     """认领并同步执行一个任务；无任务时返回 False。"""
     task = store.claim_next()
@@ -55,8 +65,10 @@ def main() -> None:
 
     concurrency = int(os.getenv("WORKER_CONCURRENCY", "2"))
     print(f"[worker] started, concurrency={concurrency}", flush=True)
+    ttl_hours = float(os.getenv("FILE_TTL_HOURS", "6"))
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = set()
+        last_cleanup = time.monotonic()
         while True:
             futures = {f for f in futures if not f.done()}
             while len(futures) < concurrency:
@@ -64,6 +76,12 @@ def main() -> None:
                 if not task:
                     break
                 futures.add(pool.submit(_execute, store, task))
+            # 每小时清理一次超过保留时长的完成文件。
+            if time.monotonic() - last_cleanup >= 3600:
+                removed = cleanup_expired_files(store, ttl_hours)
+                if removed:
+                    print(f"[worker] cleaned {removed} expired file(s)", flush=True)
+                last_cleanup = time.monotonic()
             time.sleep(1)
 
 

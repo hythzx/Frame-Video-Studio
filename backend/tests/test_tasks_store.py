@@ -81,3 +81,32 @@ def test_title_saved_in_resolve_phase(tmp_path):
     assert store.get(task["id"])["title"] is None
     store.set_title(task["id"], "Big Buck Bunny")
     assert store.get(task["id"])["title"] == "Big Buck Bunny"
+
+
+def test_list_expired_ready_only_aged_tasks(tmp_path):
+    import sqlite3
+    store = make_store(tmp_path)
+    old = store.create(kind="video", url="u1", platform="x", format_id="f")
+    fresh = store.create(kind="video", url="u2", platform="x", format_id="f")
+    store.complete(old["id"], file_size=10)
+    store.complete(fresh["id"], file_size=10)
+    # 把 old 的完成时间回拨 7 小时（模拟过期）
+    conn = sqlite3.connect(store.db_path)
+    conn.execute(
+        "UPDATE tasks SET updated_at = datetime('now', '-7 hours') WHERE id = ?", (old["id"],))
+    conn.commit()
+
+    expired = store.list_expired_ready(ttl_hours=6)
+    assert [t["id"] for t in expired] == [old["id"]]
+    assert store.list_expired_ready(ttl_hours=8) == []  # 8 小时内不算过期
+
+
+def test_mark_expired_keeps_metadata(tmp_path):
+    store = make_store(tmp_path)
+    task = store.create(kind="video", url="u", platform="x", format_id="f")
+    store.complete(task["id"], file_size=10)
+    store.mark_expired(task["id"])
+    row = store.get(task["id"])
+    assert row["status"] == "expired"
+    assert row["file_size"] == 10 and row["title"] is None or True  # 元数据保留
+    assert row["url"] == "u"

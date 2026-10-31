@@ -99,3 +99,48 @@ def test_format_fallback_via_download_video(store, monkeypatch):
     worker.process_next_task(store)
     assert captured["format"] == "136+140"
     assert store.get(task["id"])["status"] == "ready"
+
+
+def test_cleanup_removes_expired_files_only(store, monkeypatch):
+    import sqlite3
+    task = store.create(kind="video", url="u", platform="x", format_id="f")
+    monkeypatch.setattr(main, "extract", lambda url: {"title": "t"})
+    monkeypatch.setattr(main, "choices", lambda data, platform: [{"id": "f"}])
+
+    def fake_download(url, format_id, folder, platform):
+        output = folder / "video.mp4"
+        output.write_bytes(b"x")
+        return output
+
+    monkeypatch.setattr(main, "download_video", fake_download)
+    worker.process_next_task(store)
+    assert store.file_path(task["id"]).exists()
+
+    # 回拨完成时间到 7 小时前
+    conn = sqlite3.connect(store.db_path)
+    conn.execute(
+        "UPDATE tasks SET updated_at = datetime('now', '-7 hours') WHERE id = ?", (task["id"],))
+    conn.commit()
+
+    removed = worker.cleanup_expired_files(store, ttl_hours=6)
+    assert removed == 1
+    assert not store.file_path(task["id"]).exists()
+    assert store.get(task["id"])["status"] == "expired"
+
+    # 再次清理：无可清理
+    assert worker.cleanup_expired_files(store, ttl_hours=6) == 0
+
+
+def test_cleanup_keeps_recent_files(store, monkeypatch):
+    task = store.create(kind="video", url="u", platform="x", format_id="f")
+    monkeypatch.setattr(main, "extract", lambda url: {"title": "t"})
+    monkeypatch.setattr(main, "choices", lambda data, platform: [{"id": "f"}])
+    def fake_download(url, format_id, folder, platform):
+        output = folder / "video.mp4"
+        output.write_bytes(b"x")
+        return output
+
+    monkeypatch.setattr(main, "download_video", fake_download)
+    worker.process_next_task(store)
+    assert worker.cleanup_expired_files(store, ttl_hours=6) == 0
+    assert store.get(task["id"])["status"] == "ready"
