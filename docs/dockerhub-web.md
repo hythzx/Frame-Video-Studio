@@ -1,125 +1,95 @@
 # Frame Video Studio — Web
 
-![Frame Video Studio icon](https://raw.githubusercontent.com/hythzx/Twitter-Video-Downloader/main/frontend/public/favicon.svg)
+![Frame Video Studio icon](https://raw.githubusercontent.com/hythzx/Frame-Video-Studio/main/frontend/public/favicon.svg)
 
-**A clean, responsive video downloader interface for X / Twitter, YouTube and Bilibili.**
+**A responsive self-hosted downloader for X / Twitter, YouTube and Bilibili.**
 
-This is the frontend image of [Frame Video Studio](https://github.com/hythzx/Twitter-Video-Downloader). The Vue 3 app is compiled into static assets and served by **Nginx**. It offers platform-aware link entry, video metadata and thumbnail preview, resolution selection and a download button.
+This is the **Web image** of [Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio), built with **Vue 3 and Nginx**. Paste a link, explore available media formats, and save videos, audio and subtitle files from one unified interface.
 
-> This is the **Web image only**. It needs the companion **video-downloader-api** service to extract and download media.
+> The Web image requires the companion `hythzx/video-downloader-api` service. Asynchronous video downloads also require a **Worker** using that same API image.
 
-## Image
+## Docker image
 
 ```bash
-docker pull <dockerhub-username>/video-downloader-web:latest
+docker pull hythzx/video-downloader-web:latest
 ```
 
-Replace `<dockerhub-username>` with the image publisher's Docker Hub username. The container listens on **port 80**.
+The container serves HTTP on **port 80**. The Docker Hub image name remains unchanged after the GitHub repository was renamed.
 
-## Highlights
+## Features
 
-- One interface for **X / Twitter, YouTube and Bilibili**.
-- Automatic source identification from pasted video links.
-- Responsive dark UI, with video thumbnail, title, duration and format selection.
-- Download requests are handled by the API; no login or database is required by the frontend.
-- Built as a static Vue app and served by lightweight Nginx.
+- **Three platforms:** X / Twitter, YouTube and Bilibili, detected from the pasted link.
+- **Video:** available resolutions with MP4 download and server-side DASH merging where needed.
+- **Audio:** MP3 and M4A extraction.
+- **Subtitles:** SRT or VTT from available human or automatic caption tracks.
+- **Video download jobs:** background Worker downloads with status polling and browser-native file downloads after completion.
+- **Recent history:** records of the latest media extractions, with an option to reselect an item.
+- **My X Bookmarks (optional):** browse personal bookmarks using server-side cookies, filter video posts and select up to five posts for ZIP download.
+- Dark, responsive interface with no third-party analytics.
 
-## Recommended deployment
+Video tasks are asynchronous, but audio, subtitles and X bookmark ZIP downloads still use synchronous API calls in the current version. Real-time SSE progress, cancel/retry UI and task-expiry cleanup are not yet available.
 
-The web image's Nginx configuration proxies requests from `/api/` to a Docker network hostname named **`api`** on port **8000**. For that reason, **the recommended setup is the repository's two-service Compose deployment**:
+## Quick start
+
+The recommended installation uses the **current three-service Compose stack**, including `web`, `api`, `worker` and the persistent `frame-data` volume:
 
 ```bash
-git clone https://github.com/hythzx/Twitter-Video-Downloader.git
-cd Twitter-Video-Downloader
+git clone https://github.com/hythzx/Frame-Video-Studio.git
+cd Frame-Video-Studio
 cp .env.example .env
-# Edit .env and set DOCKERHUB_USERNAME=<dockerhub-username>
-docker compose -f compose.deploy.yaml pull
-docker compose -f compose.deploy.yaml up -d
+docker compose pull
+docker compose up -d
 ```
 
-Then open:
+Open **http://127.0.0.1:8080** on the Docker host.
 
-```text
-http://localhost:8080
-```
+[Current Docker Compose file](https://github.com/hythzx/Frame-Video-Studio/blob/main/compose.yaml).
 
-By default the frontend is bound to `127.0.0.1:8080` on the Docker host. Change `BIND_ADDRESS` and `PORT` in `.env` as needed, and add HTTPS and access control before exposing it to other networks.
+### How Web connects to the backend
 
-## Docker Compose example
+The included Nginx config forwards `/api/` to the internal Docker DNS name `api:8000`. The service must be reachable as `api` on the Compose network. This is configured at the Nginx layer, not through a browser-side `API_URL` environment variable.
 
-The following example shows how the two images are wired together:
+Keep `TWITTER_COOKIES`, `BILI_COOKIES` and `FRAME_ACCESS_TOKEN` in the backend/server environment; they are **not** passed to the Web image.
 
-```yaml
-services:
-  api:
-    image: <dockerhub-username>/video-downloader-api:latest
-    restart: unless-stopped
-    environment:
-      MAX_DURATION_SECONDS: "3600"
-      MAX_DOWNLOAD_MB: "1024"
-    read_only: true
-    tmpfs:
-      - /tmp:size=2g,mode=1777
+## Deployment settings
 
-  web:
-    image: <dockerhub-username>/video-downloader-web:latest
-    restart: unless-stopped
-    depends_on:
-      - api
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-      - DAC_OVERRIDE
-    ports:
-      - "127.0.0.1:8080:80"
-```
-
-The complete [production Compose file](https://github.com/hythzx/Twitter-Video-Downloader/blob/main/compose.deploy.yaml) also includes additional container security settings.
-
-**Important:** Running the web container alone can serve the static page, but extracting and downloading videos will fail without the `api` service. The API hostname is configured in the image's Nginx configuration; it is **not** a runtime `API_URL` environment variable.
-
-## Configuration
-
-| Setting | Default | Purpose |
+| Variable | Default | Description |
 | --- | --- | --- |
-| Container port | `80` | HTTP frontend listener |
-| `PORT` (Compose) | `8080` | Published host port |
-| `BIND_ADDRESS` (Compose) | `127.0.0.1` | Host interface exposed |
-| `IMAGE_TAG` (Compose) | `latest` | Tag selected for both images |
+| `BIND_ADDRESS` | `127.0.0.1` | Host interface used for the Web port |
+| `PORT` | `8080` | Published Web port |
+| Container port | `80` | Internal Nginx HTTP port |
 
-Video extraction settings and optional platform cookies belong to the **API service**, not this web container.
+For remote access, configure HTTPS, site-wide authentication and rate limiting at your reverse proxy.
 
 ## Troubleshooting
 
-- **Web page loads but extraction fails:** Confirm the API service is running and reachable as `api:8000` from the web container's network.
-- **502 Bad Gateway:** Check `docker compose -f compose.deploy.yaml logs api web` and verify the API health check.
-- **Clipboard paste unavailable:** Browser clipboard APIs can require a secure context (HTTPS or localhost). Paste directly into the field if needed.
-- **Video unavailable:** The backend may be limited by platform access rules or the available yt-dlp extractor formats.
+- **Page loads but API calls fail:** check the `api` container and Docker DNS/network connection.
+- **Video tasks remain queued:** check the `worker` service and the shared `frame-data` volume.
+- **502 Bad Gateway:** inspect `docker compose logs api web`.
+- **Media unavailable:** site restrictions, expired cookies or yt-dlp extractor changes can prevent downloads.
+- **Clipboard not available:** browser clipboard permissions can require HTTPS or localhost.
 
-## Update
+Check service logs:
 
 ```bash
-docker compose -f compose.deploy.yaml pull
-docker compose -f compose.deploy.yaml up -d
+docker compose ps
+docker compose logs -f api worker web
 ```
 
-For reproducible releases, set `IMAGE_TAG` to a published version, such as `1.0.0`, rather than always tracking `latest`.
+To update:
 
-## Tags and source
+```bash
+git pull origin main
+docker compose pull
+docker compose up -d
+```
 
-GitHub Actions publishes `latest` from `main`, commit SHA tags, and semantic version tags from `v*` Git tags. Images are built for **linux/amd64** and **linux/arm64**.
+## Source and releases
 
-**Source:** https://github.com/hythzx/Twitter-Video-Downloader
+- **GitHub:** https://github.com/hythzx/Frame-Video-Studio
+- **API image:** `hythzx/video-downloader-api`
+- **Compose:** https://github.com/hythzx/Frame-Video-Studio/blob/main/compose.yaml
 
-**Companion image:** `<dockerhub-username>/video-downloader-api`
+GitHub Actions builds images for **linux/amd64** and **linux/arm64** and publishes `latest`, commit SHA tags and version tags on releases.
 
-## Optional: My Bookmarks
-
-The Web interface includes a **我的收藏** tab for the X account configured on the **API server**. Enter the independently generated `FRAME_ACCESS_TOKEN` on that tab, then manually load your bookmarks, filter posts with videos, and download one MP4 or up to five videos as ZIP.
-
-**Do not paste X cookies into the browser interface.** The API container keeps `auth_token`/`ct0` on the server in `TWITTER_COOKIES`. The page's Frame access key is held only in memory. The unofficial X interface may change or rate-limit access.
-
-[Configuration guide](https://github.com/hythzx/Twitter-Video-Downloader#private-x-bookmarks-cookie-based-optional).
+Download only media you are permitted to save. The private X bookmarks feature depends on unofficial web endpoints that may change or enforce rate limits.
