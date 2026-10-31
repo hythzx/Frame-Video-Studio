@@ -412,6 +412,8 @@ def resolve_requested_format(format_id: str, formats: list) -> str | None:
     精确匹配失败时，按请求的视频流分辨率就近降级（不超过请求值），
     而不是直接报"画质不可用"。
     """
+    if format_id == "best":
+        return formats[0]["id"] if formats else None
     ids = {x["id"] for x in formats}
     if format_id in ids:
         return format_id
@@ -661,6 +663,9 @@ app.include_router(bookmarks_router)
 
 from .tasks.routes import router as tasks_router
 app.include_router(tasks_router)
+
+from .youtube_channels import router as youtube_channels_router
+app.include_router(youtube_channels_router)
 
 def _dns_resolve_check_enabled() -> bool:
     """DNS 解析级 SSRF 校验开关。
