@@ -1,8 +1,8 @@
 # Frame Video Studio — API
 
-**Self-hosted multi-platform media extraction, downloading and processing API.**
+**Self-hosted yt-dlp-powered media extraction, download and processing API for many websites.**
 
-[Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio) supports **X / Twitter, YouTube and Bilibili**. The backend is built with **FastAPI, yt-dlp and FFmpeg** and powers video format selection, audio extraction, subtitle downloads, download tasks, recent extraction history and an optional private X bookmarks viewer.
+[Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio) has dedicated adapters for **X / Twitter, YouTube and Bilibili**, and also attempts other websites recognized by yt-dlp (where compatible MP4, DASH or native HLS streams are available). The backend is built with **FastAPI, yt-dlp and FFmpeg** and powers video format selection, audio extraction, subtitle downloads, download tasks, recent extraction history and an optional private X bookmarks viewer.
 
 > This is the **backend image**. Deploy it alongside the [Web image](https://hub.docker.com/r/hythzx/video-downloader-web). The same API image also runs the dedicated background **Worker** service.
 
@@ -21,8 +21,9 @@ The API container listens on **port 8000**. GitHub Actions builds amd64 and arm6
 | **X / Twitter** | Download available MP4 formats | MP3 / M4A when an audio track is accessible | Where provided by X |
 | **YouTube** | Resolution selection; DASH video/audio merging via FFmpeg | MP3 / M4A | Human and automatic captions where provided |
 | **Bilibili** | Resolution selection; DASH video/audio merging via FFmpeg | MP3 / M4A | Where available |
+| **Other yt-dlp sites** | Compatible MP4 / DASH / native HLS streams | Where available | Where available |
 
-Actual formats depend on platform access, extractor compatibility, region and valid cookies when required. The application does not bypass DRM.
+Actual formats depend on platform access, extractor compatibility, region and cookies. The supported-sites list does not guarantee operation, and output video is currently MP4-focused. The application does not bypass DRM.
 
 ## Recommended deployment
 
