@@ -2,9 +2,9 @@
 
 ![Frame Video Studio icon](https://raw.githubusercontent.com/hythzx/Frame-Video-Studio/main/frontend/public/favicon.svg)
 
-**A self-hosted, multi-platform video, audio, and subtitle downloader.**
+**A self-hosted media downloader powered by yt-dlp.**
 
-Frame Video Studio brings **X / Twitter, YouTube, and Bilibili** into one clean, responsive interface. Paste a media URL, inspect available formats, and download the content you want to keep. Powered by **yt-dlp, FastAPI, FFmpeg, Vue 3, and Nginx**.
+Frame Video Studio uses **yt-dlp to recognize many media websites** from one interface. X / Twitter, YouTube and Bilibili receive dedicated adaptations; sites such as Vimeo, TikTok and Instagram can also be attempted when their yt-dlp extractors and media formats are compatible. Paste an HTTPS media page URL, inspect available formats, and download the content you want to keep. Powered by **yt-dlp, FastAPI, FFmpeg, Vue 3, and Nginx**.
 
 **[GitHub Repository](https://github.com/hythzx/Frame-Video-Studio)** · **[Documentation](https://github.com/hythzx/Frame-Video-Studio#readme)**
 
@@ -21,7 +21,7 @@ Frame Video Studio is published as two images. The same API image is used to run
 
 ## Features
 
-- **Multi-platform support:** X / Twitter, YouTube, and Bilibili.
+- **Generic media extraction:** yt-dlp automatically detects compatible sites; dedicated adapters remain for X / Twitter, YouTube, and Bilibili.
 - **Video downloads:** Choose an available resolution and save MP4 media. Where required, FFmpeg merges separate video and audio streams.
 - **Audio extraction:** Export **MP3** or **M4A** when a usable audio track is available.
 - **Subtitle downloads:** Save source-provided human or automatically generated captions as **SRT** or **VTT**.
@@ -37,8 +37,9 @@ Frame Video Studio is published as two images. The same API image is used to run
 | X / Twitter | Available MP4 formats | MP3 / M4A if an audio stream is available | If provided by the platform |
 | YouTube | Resolution selection; FFmpeg merging when needed | MP3 / M4A | Human and automatic captions if available |
 | Bilibili | Resolution selection; FFmpeg merging when needed | MP3 / M4A | If provided by the platform |
+| Other yt-dlp sites | Compatible MP4, DASH and native HLS formats | Where audio is available | Where available |
 
-Actual availability depends on the media, platform permissions, your region, login state, and yt-dlp extractor compatibility. **DRM-protected content is not supported.**
+The supported-sites list is not a guarantee: formats, permissions, connectivity and extractor changes can prevent downloads. Frame currently produces **MP4** files for compatible MP4, DASH and native HLS streams; other containers and incompatible codecs may fail. **DRM is not supported.**
 
 ## Quick start with Docker Compose
 
