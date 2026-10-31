@@ -68,7 +68,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
           labels: |
             org.opencontainers.image.title=Frame ${{ matrix.component }}
-            org.opencontainers.image.description=Multi-platform video downloader (X, YouTube, Bilibili)
+            org.opencontainers.image.description=Frame Video Studio — self-hosted multi-platform video, audio and subtitle downloader (X, YouTube, Bilibili)
+            org.opencontainers.image.source=https://github.com/hythzx/Frame-Video-Studio
 
       - name: Build and push
         uses: docker/build-push-action@v6
