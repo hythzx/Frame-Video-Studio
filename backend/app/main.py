@@ -325,11 +325,46 @@ def audio_available(data: dict) -> bool:
     )
 
 
-def choices(data: dict, platform: str) -> list:
-    if platform in ("youtube", "bilibili"):
-        return _dash_choices(data)
-    return _twitter_choices(data)
+def _hls_choices(data: dict) -> list:
+    """HLS variants containing video and audio, handled by yt-dlp native HLS."""
+    result = []
+    for f in data.get("formats") or []:
+        if (f.get("protocol") != "m3u8_native" or f.get("ext") != "mp4"
+                or f.get("vcodec") in (None, "none")
+                or f.get("acodec") in (None, "none")):
+            continue
+        fid = str(f.get("format_id") or "")
+        if not fid:
+            continue
+        h = f.get("height")
+        result.append({
+            "id": fid, "width": f.get("width"), "height": h,
+            "bitrate": f.get("tbr"), "size": f.get("filesize") or f.get("filesize_approx"),
+            "label": f"{h}p" if h else "自动", "source": "hls",
+        })
+    return result
 
+
+def choices(data: dict, platform: str) -> list:
+    """Prefer compatible MP4/DASH/HLS formats independent of platform."""
+    progressive = [dict(c, source="mp4") for c in _twitter_choices(data)]
+    dash = [dict(c, source="dash") for c in _dash_choices(data)]
+    hls = _hls_choices(data)
+    # Preserve the previous DASH preference for YouTube and Bilibili.
+    preferred = dash + progressive + hls if platform in ("youtube", "bilibili") else progressive + dash + hls
+    seen_ids, seen_heights = set(), set()
+    result = []
+    for item in preferred:
+        if item["id"] in seen_ids:
+            continue
+        seen_ids.add(item["id"])
+        height = item.get("height")
+        if height is not None and height in seen_heights:
+            continue
+        if height is not None:
+            seen_heights.add(height)
+        result.append(item)
+    return sorted(result, key=lambda f: (f.get("height") or 0, f.get("bitrate") or 0), reverse=True)
 
 @app.get("/api/health")
 def health():
@@ -354,6 +389,7 @@ async def inspect_video(request: VideoRequest):
     await asyncio.to_thread(
         _record_history, url, platform, data, formats, thumbnail)
     return {
+        "platform_name": (str(data.get("extractor_key") or data.get("extractor") or "其他平台")[:64] if platform == "other" else {"x": "X / Twitter", "youtube": "YouTube", "bilibili": "哔哩哔哩"}.get(platform, platform)),
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
         "description": (data.get("description") or "")[:400],
@@ -410,6 +446,7 @@ def download_video(url: str, format_id: str, folder: Path, platform: str) -> Pat
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "format": resolved, "outtmpl": str(folder / "video.%(ext)s"),
+        "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
         "merge_output_format": "mp4",
         "max_filesize": MAX_BYTES, "socket_timeout": 15,
         "retries": 2, "continuedl": False, "nopart": True,
@@ -467,6 +504,10 @@ def _localize_thumbnail(platform: str, video_id: str, thumbnail: str | None) -> 
     """
     if not thumbnail or not video_id or not _COVER_NAME.fullmatch(video_id):
         return thumbnail
+    try:
+        validate_media_url(thumbnail, allow_http=True, resolve=True)
+    except ValueError:
+        return None
     suffix = Path(urlsplit(thumbnail).path).suffix or ".jpg"
     if not _COVER_NAME.fullmatch(suffix.lstrip(".")):
         suffix = ".jpg"
