@@ -26,7 +26,7 @@ Frame Video Studio is published as two images. The same API image is used to run
 - **Audio extraction:** Export **MP3** or **M4A** when a usable audio track is available.
 - **Subtitle downloads:** Save source-provided human or automatically generated captions as **SRT** or **VTT**.
 - **Background video jobs:** Create video download tasks and check their status instead of keeping a single HTTP request open for the entire download.
-- **YouTube creator library:** Paste a channel homepage, browse Videos / Shorts / live archives page by page, and queue up to 20 selected videos for background MP4 downloads using the existing Worker.\n- **Recent extraction history:** Browse recently parsed media and reopen an item.
+- **YouTube creator library:** Paste a channel homepage, browse Videos / Shorts / live archives page by page, choose title language (Simplified Chinese by default, Traditional Chinese, English or extractor default), and queue up to 20 selected videos for background MP4 downloads using the existing Worker.\n- **Recent extraction history:** Browse recently parsed media and reopen an item.
 - **Optional private X bookmarks:** Browse your own X bookmarks using server-side login cookies, filter video posts, and download selected video posts individually or in small ZIP batches.
 - **Self-hosted storage:** SQLite metadata and finished background video downloads use a persistent Docker volume.
 
