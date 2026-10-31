@@ -79,7 +79,7 @@ def test_formats_only_progressive_mp4():
         {"format_id": "hls", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "protocol": "m3u8_native"},
         {"format_id": "videoonly", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "protocol": "https"},
     ]}, "x")
-    assert [x["id"] for x in formats] == ["720"]
+    assert [x["id"] for x in formats] == ["720", "hls"]
 
 def test_cookie_jar_from_env(monkeypatch):
     monkeypatch.setenv("TWITTER_COOKIES", "auth_token=abc; ct0=def")
@@ -150,7 +150,7 @@ def test_extract_with_fake_data(monkeypatch):
     assert response.json()["formats"][0]["id"] == "one"
 
 def test_download_rejects_bad_url():
-    response = client.post("/api/download", json={"url": "https://example.com/", "format_id": "bad"})
+    response = client.post("/api/download", json={"url": "https://127.0.0.1/private", "format_id": "bad"})
     assert response.status_code == 422
 
 
@@ -233,3 +233,91 @@ def test_resolve_format_fallback_and_exact():
     # 请求的 720p 已不存在：降级到不超过请求分辨率的最近画质。
     assert main.resolve_requested_format("999+140", formats) == "248-sr+140-drc"
     assert main.resolve_requested_format("gone+gone", formats) is None
+
+
+def test_generic_https_sites_are_accepted():
+    assert main.canonical_url("https://vimeo.com/123456") == ("https://vimeo.com/123456", "other")
+    assert main.canonical_url("https://www.tiktok.com/@demo/video/123")[1] == "other"
+    assert main.canonical_url("https://www.instagram.com/reel/ABC/")[1] == "other"
+
+
+def test_generic_media_choices_support_mp4_dash_and_hls():
+    sample = {"formats": [
+        {"format_id": "direct", "ext": "mp4", "protocol": "https",
+         "vcodec": "avc1", "acodec": "mp4a.40.2", "height": 720},
+        {"format_id": "hls", "ext": "mp4", "protocol": "m3u8_native",
+         "vcodec": "avc1", "acodec": "mp4a.40.2", "height": 1080},
+        {"format_id": "video", "ext": "mp4", "protocol": "https",
+         "vcodec": "avc1", "acodec": "none", "height": 1440},
+        {"format_id": "audio", "ext": "m4a", "protocol": "https",
+         "vcodec": "none", "acodec": "mp4a.40.2"},
+    ]}
+    selected = main.choices(sample, "other")
+    assert [x["id"] for x in selected] == ["video+audio", "hls", "direct"]
+    assert [x["source"] for x in selected] == ["dash", "hls", "mp4"]
+
+
+def test_generic_extract_response_uses_extractor_name(monkeypatch):
+    monkeypatch.setattr(main, "extract", lambda url: {
+        "id": "abc", "extractor_key": "Vimeo", "title": "Clip",
+        "duration": 10, "thumbnail": None,
+        "formats": [{"format_id": "stream", "ext": "mp4",
+                     "vcodec": "avc1", "acodec": "aac",
+                     "protocol": "https", "height": 480}],
+    })
+    result = client.post("/api/extract", json={"url": "https://vimeo.com/123456"})
+    assert result.status_code == 200
+    assert result.json()["platform"] == "other"
+    assert result.json()["platform_name"] == "Vimeo"
+    assert result.json()["formats"][0]["source"] == "mp4"
+
+
+def test_public_network_url_rejects_unsafe_hosts(monkeypatch):
+    from app.security import validate_media_url
+    import pytest
+    invalid = (
+        "http://vimeo.com/123", "https://127.0.0.1/", "https://[::1]/",
+        "https://localhost/video", "https://api.internal/video",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://user:pass@vimeo.com/1", "file:///etc/passwd",
+        "https://metadata.google.internal/computeMetadata/v1/",
+        "https://0x7f000001/",
+    )
+    for url in invalid:
+        with pytest.raises(ValueError):
+            validate_media_url(url)
+    assert validate_media_url("https://vimeo.com/123") == "https://vimeo.com/123"
+
+
+def test_public_network_url_rejects_private_dns(monkeypatch):
+    import socket
+    import pytest
+    from app.security import validate_media_url
+
+    def fake_resolve(host, port, type=None):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.50", 443))]
+    monkeypatch.setattr(socket, "getaddrinfo", fake_resolve)
+    with pytest.raises(ValueError, match="公网"):
+        validate_media_url("https://videos.example.net/watch/1", resolve=True)
+
+
+def test_public_network_url_accepts_public_dns(monkeypatch):
+    import socket
+    from app.security import validate_media_url
+
+    def fake_resolve(host, port, type=None):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))]
+    monkeypatch.setattr(socket, "getaddrinfo", fake_resolve)
+    assert validate_media_url("https://videos.example.net/watch/1", resolve=True)
+
+
+def test_generic_task_accepts_other_platform(monkeypatch, tmp_path):
+    from app.tasks import routes
+    from app.tasks.store import TaskStore
+    store = TaskStore(tmp_path / "tasks.sqlite", tmp_path)
+    monkeypatch.setattr(routes, "get_store", lambda: store)
+    response = client.post("/api/tasks", json={
+        "url": "https://vimeo.com/123456", "kind": "video", "format_id": "stream"
+    })
+    assert response.status_code == 202
+    assert store.get(response.json()["id"])["platform"] == "other"
