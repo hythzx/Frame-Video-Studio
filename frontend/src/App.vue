@@ -28,10 +28,11 @@ const detected = computed(() => {
     if (['x.com','www.x.com','twitter.com','www.twitter.com','mobile.x.com','mobile.twitter.com'].includes(host)) return 'x'
     if (['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be','www.youtu.be'].includes(host)) return 'youtube'
     if (['bilibili.com','www.bilibili.com','m.bilibili.com','b23.tv'].includes(host)) return 'bilibili'
+    if (new URL(link.value.trim()).protocol === 'https:' && !new URL(link.value.trim()).port) return 'other'
   } catch {}
   return ''
 })
-const platformName = id => platforms.find(p => p.id === id)?.name || '视频'
+const platformName = id => platforms.find(p => p.id === id)?.name || (video.value?.platform_name || '其他平台')
 const currentFormat = computed(() => video.value?.formats?.find(f => f.id === selected.value))
 const formatSize = n => n ? (n / 1048576).toFixed(1) + ' MB' : '大小未知'
 const prettyDuration = s => {
@@ -45,7 +46,7 @@ async function getError(res) {
 }
 async function analyze() {
   if (!link.value.trim()) { error.value = '请先粘贴视频链接'; return }
-  if (!detected.value) { error.value = '目前支持 X / Twitter、YouTube 和哔哩哔哩的视频链接'; return }
+  if (!detected.value) { error.value = '请提供有效的 HTTPS 媒体链接'; return }
   loading.value = true
   video.value = null
   error.value = ''
@@ -176,9 +177,9 @@ function useExample(platform) {
       <section class="hero">
         <div class="eyebrow"><Sparkles :size="14"/> ONE PLACE FOR YOUR VIDEOS <span class="eyebrow-line"></span> FRAME STUDIO</div>
         <h1>Save what matters<span class="accent">.</span><br/><span class="soft">From anywhere you love.</span></h1>
-        <p class="hero-sub">一个入口，收藏来自不同平台的精彩瞬间。<br class="mobile-br"/>粘贴视频链接，自动识别来源，选择画质并保存。</p>
+        <p class="hero-sub">一个入口，收藏来自不同平台的精彩瞬间。<br class="mobile-br"/>粘贴媒体链接，自动识别网站和格式，选择画质并保存。</p>
         <div class="platform-strip" aria-label="支持的视频平台">
-          <div class="platform-strip-label">SUPPORTED PLATFORMS</div>
+          <div class="platform-strip-label">POPULAR PLATFORMS · 也支持更多 yt-dlp 站点</div>
           <div class="platform-items">
             <button v-for="p in platforms" :key="p.id" class="platform-chip" :class="['platform-' + p.id, { 'platform-active': detected === p.id }]" type="button" @click="useExample(p)" :title="'支持 ' + p.name + ' 链接，点击查看输入格式'">
               <span class="platform-glyph">{{ p.short }}</span>
@@ -198,7 +199,7 @@ function useExample(platform) {
           <form @submit.prevent="analyze" class="input-form">
             <div class="url-box">
               <Link2 :size="20" class="input-icon"/>
-              <input v-model="link" type="url" placeholder="粘贴 X / YouTube / 哔哩哔哩视频链接…" aria-label="视频链接" :disabled="loading" required />
+              <input v-model="link" type="url" placeholder="粘贴任意受支持网站的 HTTPS 视频或音频链接…" aria-label="视频链接" :disabled="loading" required />
               <button type="button" class="paste-btn" @click="paste"><Clipboard :size="15"/> <span>粘贴</span></button>
             </div>
             <button class="primary-btn" type="submit" :disabled="loading">
@@ -222,11 +223,11 @@ function useExample(platform) {
                 <img v-if="video.thumbnail" :src="video.thumbnail" referrerpolicy="no-referrer" alt="" class="preview-cover"/>
                 <span class="preview-shade"></span>
                 <span class="preview-play"><Play :size="23" fill="currentColor"/></span>
-                <span class="preview-platform">{{ platformName(video.platform) }}</span>
+                <span class="preview-platform">{{ video.platform_name || platformName(video.platform) }}</span>
                 <span class="duration"><Clock3 :size="13"/> {{ prettyDuration(video.duration) }}</span>
               </div>
               <div class="video-info">
-                <div class="mini-label">VIDEO READY <span class="source-label">{{ platformName(video.platform) }}</span></div>
+                <div class="mini-label">MEDIA READY <span class="source-label">{{ video.platform_name || platformName(video.platform) }}</span></div>
                 <h2>{{ video.title }}</h2>
                 <p v-if="video.uploader" class="author">{{ video.uploader }}</p>
                 <div class="rule"></div>
@@ -239,7 +240,7 @@ function useExample(platform) {
                   <div class="mini-label format-header">选择视频画质 <span>{{ video.formats?.length || 0 }} 种格式</span></div>
                   <div class="format-options">
                     <button v-for="f in video.formats" :key="f.id" class="format-option" :class="{ active: selected === f.id }" @click="selected = f.id" type="button">
-                      <span><strong>{{ f.label }}</strong><small>{{ f.width ? f.width + ' × ' + f.height : 'MP4' }}</small></span>
+                      <span><strong>{{ f.label }}</strong><small>{{ f.source === 'dash' ? 'DASH · MP4' : f.source === 'hls' ? 'HLS · MP4' : 'MP4' }}{{ f.width ? ' · ' + f.width + ' × ' + f.height : '' }}</small></span>
                       <span class="format-right"><small>{{ formatSize(f.size) }}</small><span class="radio-check"><Check v-if="selected === f.id" :size="13"/></span></span>
                     </button>
                   </div>
@@ -281,7 +282,7 @@ function useExample(platform) {
         <p v-if="error" class="error" role="alert"><X :size="16"/> {{ error }}</p>
       </div>
       <div class="feature-row">
-        <div><span class="feature-icon"><Globe2 :size="17"/></span><span><strong>多平台解析</strong><small>一个入口，识别三大视频平台</small></span></div>
+        <div><span class="feature-icon"><Globe2 :size="17"/></span><span><strong>通用媒体解析</strong><small>由 yt-dlp 识别大量媒体网站</small></span></div>
         <div><span class="feature-icon"><ArrowDownToLine :size="17"/></span><span><strong>高清画质</strong><small>多分辨率可选，自动合并音视频</small></span></div>
         <div><span class="feature-icon"><LockKeyhole :size="17"/></span><span><strong>私人收藏空间</strong><small>自托管部署，无需注册账号</small></span></div>
       </div>
