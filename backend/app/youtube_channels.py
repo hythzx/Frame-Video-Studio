@@ -25,6 +25,7 @@ _CHANNEL_PATH = re.compile(
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 _SECTIONS = {"videos", "shorts", "streams"}
 _PAGE_SIZE = 24
+_TITLE_LANGUAGES = {"zh-CN", "zh-TW", "en", "original"}
 
 
 def canonical_channel_url(value: str, section: str = "videos") -> str:
@@ -59,8 +60,10 @@ def _video_id(info: dict) -> str | None:
     return None
 
 
-def _channel_page(channel_url: str, start: int, count: int = _PAGE_SIZE) -> dict:
+def _channel_page(channel_url: str, start: int, language: str = "zh-CN", count: int = _PAGE_SIZE) -> dict:
     # All entries are flat: do not analyze formats or download videos during listing.
+    if language not in _TITLE_LANGUAGES:
+        raise ValueError("不支持的标题语言")
     opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
         "extract_flat": "in_playlist", "noplaylist": False,
@@ -68,6 +71,10 @@ def _channel_page(channel_url: str, start: int, count: int = _PAGE_SIZE) -> dict
         "ignoreerrors": True, "socket_timeout": 15,
         "retries": 1, "extractor_retries": 1,
     }
+    # Only the listing metadata requests use this preference. Download URLs
+    # and video IDs never change. "original" preserves yt-dlp defaults.
+    if language != "original":
+        opts["extractor_args"] = {"youtube": {"lang": [language]}}
     try:
         from .main import _apply_cookies
         with YoutubeDL(opts) as ydl:
@@ -109,11 +116,12 @@ def _channel_page(channel_url: str, start: int, count: int = _PAGE_SIZE) -> dict
 async def list_channel(
     url: str = Query(min_length=15, max_length=2048),
     section: str = Query(default="videos", pattern="^(videos|shorts|streams)$"),
+    lang: str = Query(default="zh-CN", pattern="^(zh-CN|zh-TW|en|original)$"),
     start: int = Query(default=1, ge=1, le=100000),
 ):
     try:
         channel_url = canonical_channel_url(url, section)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    result = await asyncio.to_thread(_channel_page, channel_url, start)
-    return {"url": channel_url, "section": section, "start": start, **result}
+    result = await asyncio.to_thread(_channel_page, channel_url, start, lang)
+    return {"url": channel_url, "section": section, "lang": lang, "start": start, **result}
