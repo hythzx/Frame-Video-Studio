@@ -1,4 +1,4 @@
-"""Multi-platform video extractor (X/Twitter, YouTube, Bilibili). Optional login cookies per platform."""
+"""Generic yt-dlp extractor with optional X and Bilibili platform adapters."""
 import asyncio
 import http.cookiejar
 import json
@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
+from .security import validate_media_url
 
 app = FastAPI(title="Frame Video Studio API", docs_url=None, redoc_url=None)
 
@@ -95,6 +96,7 @@ def _install_bili_cdn_patch() -> None:
     orig_urlopen = YoutubeDL.urlopen
 
     def patched_urlopen(self, req, *args, **kwargs):
+        validate_media_url(getattr(req, "url", "") or "", resolve=True, allow_http=True)
         resp = orig_urlopen(self, req, *args, **kwargs)
         try:
             url = getattr(req, "url", "") or ""
@@ -150,31 +152,25 @@ class SubtitleRequest(VideoRequest):
 
 
 def canonical_url(value: str) -> tuple[str, str]:
-    """校验并规范化输入链接，返回 (规范化 URL, 平台标识)。"""
+    """Accept public HTTPS media pages; yt-dlp decides whether supported."""
     try:
-        parts = urlsplit(value.strip())
+        url = validate_media_url(value, allow_http=False)
+        parts = urlsplit(url)
         host = (parts.hostname or "").lower()
-        if parts.scheme != "https" or not host:
-            raise ValueError()
-        if parts.username or parts.password or parts.port:
-            raise ValueError()
+        if parts.port is not None:
+            raise ValueError("页面链接不允许指定端口")
         if host in X_HOSTS:
             match = STATUS.fullmatch(parts.path.rstrip("/"))
             if not match:
-                raise ValueError()
+                raise ValueError("请输入 X 推文 status 链接")
             return f"https://x.com/i/status/{match.group(1)}", "x"
         if host in YOUTUBE_HOSTS:
-            if not parts.path.strip("/"):
-                raise ValueError()
-            return value.strip(), "youtube"
+            return url, "youtube"
         if host in BILI_HOSTS:
-            if not parts.path.strip("/"):
-                raise ValueError()
-            return value.strip(), "bilibili"
-        raise ValueError()
+            return url, "bilibili"
+        return url, "other"
     except (ValueError, TypeError) as exc:
-        raise HTTPException(422, "请输入有效的 X/Twitter、YouTube 或 B 站公开视频 HTTPS 链接。") from exc
-
+        raise HTTPException(422, f"请输入有效的公网 HTTPS 媒体链接：{exc}") from exc
 
 X_COOKIE_DOMAINS = (".x.com", ".twitter.com")
 BILI_COOKIE_DOMAINS = (".bilibili.com",)
@@ -221,6 +217,7 @@ def _apply_cookies(ydl) -> None:
 
 
 def extract(url: str) -> dict:
+    validate_media_url(url, resolve=True)
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "skip_download": True, "socket_timeout": 15,
