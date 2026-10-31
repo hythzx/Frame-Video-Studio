@@ -166,10 +166,15 @@ def test_thumbnail_localized_to_own_origin(client, tmp_path, monkeypatch):
     import urllib.request as ur
     class _FakeCoverResponse:
         def __init__(self, data): self._d = data
-        def read(self): return self._d
+        def read(self, n=-1): return self._d if n == -1 else self._d[:n]
         def __enter__(self): return self
         def __exit__(self, *a): return False
-    monkeypatch.setattr(ur, "urlopen", fake_fetch)
+    class FakeOpener:
+        def open(self, req, timeout=15):
+            return fake_fetch(req, timeout=timeout)
+
+    monkeypatch.setattr(ur, "build_opener", lambda *handlers: FakeOpener())
+    monkeypatch.setattr(main, "validate_media_url", lambda url, **kwargs: url)
 
     res = client.post("/api/extract", json=payload)
     assert res.status_code == 200
