@@ -347,6 +347,7 @@ async def inspect_video(request: VideoRequest):
     audio = audio_available(data)
     if not formats and not audio and not subtitles:
         raise HTTPException(422, "未发现可下载的视频、音频或字幕。")
+    await asyncio.to_thread(_record_history, url, platform, data, formats)
     return {
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
@@ -420,6 +421,13 @@ def download_video(url: str, format_id: str, folder: Path, platform: str) -> Pat
     return output
 
 
+@app.get("/api/history")
+async def extraction_history(limit: int = 200):
+    from .tasks.routes import get_store
+    limit = max(1, min(limit, 200))
+    return get_store().list_history(limit=limit)
+
+
 @app.post("/api/download")
 async def download(request: DownloadRequest):
     url, platform = canonical_url(request.url)
@@ -438,6 +446,22 @@ async def download(request: DownloadRequest):
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
+
+
+def _record_history(url: str, platform: str, data: dict, formats: list) -> None:
+    """解析成功后记录到历史表；失败静默，不影响解析响应。"""
+    try:
+        from .tasks.routes import get_store
+        get_store().record_extraction(
+            platform=platform, url=url, video_id=str(data.get("id", "")),
+            title=str(data.get("title") or "")[:200],
+            description=(data.get("description") or "")[:400],
+            thumbnail=data.get("thumbnail"),
+            duration=data.get("duration"),
+            uploader=str(data.get("uploader") or data.get("channel") or ""),
+            formats_json=json.dumps(formats, ensure_ascii=False))
+    except Exception:
+        pass
 
 
 def _media_options(folder: Path) -> dict:

@@ -1,7 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import BookmarksView from './BookmarksView.vue'
-import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, Clipboard, Clock3, Download, ExternalLink, Film, Link2, LoaderCircle, LockKeyhole, Play, ShieldCheck, Sparkles, X, Youtube, Globe2 } from 'lucide-vue-next'
+import HistoryView from './HistoryView.vue'
+import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, Clipboard, Clock3, Download, ExternalLink, Film, Link2, LoaderCircle, LockKeyhole, Play, ShieldCheck, Sparkles, X, Youtube, Globe2, History } from 'lucide-vue-next'
 
 const activePage = ref('download')
 const link = ref('')
@@ -135,6 +136,11 @@ async function download() {
   } catch (e) { error.value = e.message || '下载失败' }
   finally { downloading.value = false; taskPhase.value = '' }
 }
+function redownloadFromHistory(url) {
+  activePage.value = 'download'
+  link.value = url
+  analyze()
+}
 function reset() { video.value = null; link.value = ''; error.value = ''; selected.value = '' }
 function useExample(platform) {
   if (loading.value) return
@@ -163,6 +169,7 @@ function useExample(platform) {
     <main class="wrap">
       <nav class="main-navigation" aria-label="主导航">
         <button type="button" :class="{active:activePage==='download'}" @click="activePage='download'"><Film :size="16"/> 视频下载</button>
+        <button type="button" :class="{active:activePage==='history'}" @click="activePage='history'"><History :size="16"/> 历史记录</button>
         <button type="button" :class="{active:activePage==='bookmarks'}" @click="activePage='bookmarks'"><LockKeyhole :size="16"/> 我的收藏</button>
       </nav>
       <template v-if="activePage === 'download'">
@@ -276,6 +283,7 @@ function useExample(platform) {
         <div><span class="feature-icon"><LockKeyhole :size="17"/></span><span><strong>私人收藏空间</strong><small>自托管部署，无需注册账号</small></span></div>
       </div>
       </template>
+      <HistoryView v-else-if="activePage === 'history'" @redownload="redownloadFromHistory"/>
       <BookmarksView v-else/>
     </main>
     <footer class="footer wrap"><span>© {{ new Date().getFullYear() }} FRAME STUDIO</span><span>MADE FOR THE MOMENTS WORTH KEEPING <span class="footer-star">✳</span></span></footer>

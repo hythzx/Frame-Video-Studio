@@ -2,6 +2,7 @@
 
 阶段 A 不做实时进度与取消；旧同步下载接口保持兼容运行。
 """
+import json
 import re
 from uuid import UUID
 

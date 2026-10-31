@@ -79,3 +79,23 @@
 .bookmark-notice{padding:13px 15px;background:#24372d;border:1px solid #4a6d52;color:#d1eac5;border-radius:9px;font-size:12px}
 .bookmark-message{margin:12px 0}
 @media(max-width:700px){.bookmark-workspace{margin-top:35px}.bookmark-heading{display:block}.bookmark-private{display:none}.bookmark-token-row{flex-direction:column}.bookmark-grid{grid-template-columns:1fr}.bookmark-paging span{font-size:10px}.bookmark-batch-btn{width:auto}}
+
+/* Extraction history */
+.history-workspace{max-width:940px;margin:48px auto 100px}
+.history-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:27px}
+.history-heading h1{font-size:clamp(36px,5vw,58px);letter-spacing:-2.5px;margin:10px 0 13px}
+.history-heading p{color:#8495a8;line-height:1.7;font-size:12px}
+.history-error{padding:13px 15px;background:#3a2222;border:1px solid #6d4a4a;color:#f0cfcf;border-radius:9px;font-size:12px}
+.history-empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:46px 20px;color:#8798a9;font-size:13px}
+.history-list{display:flex;flex-direction:column;gap:13px;list-style:none;padding:0}
+.history-item{display:flex;align-items:center;gap:15px;background:#141f2e;border:1px solid #293b51;border-radius:14px;padding:13px;min-width:0}
+.history-thumb{width:118px;height:74px;border-radius:9px;object-fit:cover;background:#233247;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#7893a5}
+.history-thumb-empty{display:flex;align-items:center;justify-content:center}
+.history-meta{min-width:0;flex:1;display:flex;flex-direction:column;gap:7px}
+.history-title-row{display:flex;align-items:center;gap:9px;min-width:0}
+.history-platform{flex-shrink:0;border:1px solid #415368;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:800;letter-spacing:1px;color:#b9f68c}
+.history-title{font-size:13px;font-weight:650;color:#e6efff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-sub{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:11px;color:#8195a8}
+.history-duration{display:inline-flex;align-items:center;gap:5px}
+.history-redownload{min-height:40px;flex-shrink:0}
+@media(max-width:700px){.history-workspace{margin-top:35px}.history-heading{display:block}.history-item{flex-wrap:wrap}.history-redownload{width:100%}.history-title{white-space:normal}}

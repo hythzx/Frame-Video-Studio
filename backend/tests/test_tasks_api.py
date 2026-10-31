@@ -112,3 +112,11 @@ def test_file_falls_back_to_task_id_without_title(client):
     store.complete(task["id"], file_size=4)
     res = client.get(f"/api/tasks/{task['id']}/file")
     assert f"video-{task['id']}.mp4" in res.headers["content-disposition"]
+
+
+def test_history_endpoint_lists_recorded_extracts(client):
+    client.post("/api/tasks", json={
+        "url": "https://x.com/i/status/123", "kind": "video", "format_id": "f"})
+    history = client.get("/api/history")
+    assert history.status_code == 200
+    assert isinstance(history.json(), list)

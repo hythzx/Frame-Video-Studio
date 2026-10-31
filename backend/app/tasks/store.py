@@ -31,8 +31,28 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 """
 
+_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS extracts (
+    url TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    video_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    thumbnail TEXT,
+    duration REAL,
+    uploader TEXT,
+    formats_json TEXT NOT NULL,
+    extracted_at TEXT NOT NULL
+)
+"""
+
+_HISTORY_LIMIT = 200
+
 _TASK_COLUMNS = ("id", "status", "kind", "url", "platform", "format_id",
                  "title", "error", "file_size", "created_at", "updated_at")
+
+_HISTORY_COLUMNS = ("url", "platform", "video_id", "title", "description",
+                    "thumbnail", "duration", "uploader", "formats_json", "extracted_at")
 
 
 def _now() -> str:
@@ -47,11 +67,42 @@ class TaskStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(_SCHEMA)
+            conn.execute(_HISTORY_SCHEMA)
             # 轻量迁移：为既有数据库补齐后加的列。
             try:
                 conn.execute("ALTER TABLE tasks ADD COLUMN title TEXT")
             except sqlite3.OperationalError:
                 pass
+
+    def record_extraction(self, platform: str, url: str, video_id: str, title: str,
+                          description: str | None, thumbnail: str | None,
+                          duration: float | None, uploader: str | None,
+                          formats_json: str) -> None:
+        """记录一次成功解析；同一规范化 URL 覆盖更新并刷新时间。"""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO extracts (url, platform, video_id, title, description,"
+                " thumbnail, duration, uploader, formats_json, extracted_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(url) DO UPDATE SET platform=excluded.platform,"
+                " video_id=excluded.video_id, title=excluded.title,"
+                " description=excluded.description, thumbnail=excluded.thumbnail,"
+                " duration=excluded.duration, uploader=excluded.uploader,"
+                " formats_json=excluded.formats_json, extracted_at=excluded.extracted_at",
+                (url, platform, video_id, title, description, thumbnail,
+                 duration, uploader, formats_json, _now()))
+            # 单人自用上限：仅保留最近 200 条解析记录。
+            conn.execute(
+                "DELETE FROM extracts WHERE url NOT IN"
+                " (SELECT url FROM extracts ORDER BY extracted_at DESC LIMIT ?)",
+                (_HISTORY_LIMIT,))
+
+    def list_history(self, limit: int = 200) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM extracts ORDER BY extracted_at DESC, rowid DESC LIMIT ?",
+                (limit,)).fetchall()
+        return [dict(row) for row in rows]
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
