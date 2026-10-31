@@ -514,9 +514,15 @@ def _localize_thumbnail(platform: str, video_id: str, thumbnail: str | None) -> 
     target = _covers_dir() / f"{video_id}{suffix}"
     if not target.exists():
         try:
+            class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    validate_media_url(newurl, allow_http=True, resolve=True)
+                    return super().redirect_request(req, fp, code, msg, headers, newurl)
+
             req = urllib.request.Request(thumbnail, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                payload = r.read()
+            opener = urllib.request.build_opener(_CheckedRedirect())
+            with opener.open(req, timeout=15) as r:
+                payload = r.read(5 * 1024 * 1024 + 1)
             if not payload or len(payload) > 5 * 1024 * 1024:
                 return thumbnail
             _covers_dir().mkdir(parents=True, exist_ok=True)
