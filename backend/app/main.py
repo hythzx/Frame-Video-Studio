@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -347,11 +348,14 @@ async def inspect_video(request: VideoRequest):
     audio = audio_available(data)
     if not formats and not audio and not subtitles:
         raise HTTPException(422, "未发现可下载的视频、音频或字幕。")
-    await asyncio.to_thread(_record_history, url, platform, data, formats)
-    # B 站封面图 URL 常为 http://：HTTPS 页面属于混合内容，且会被浏览器拦截。
     thumbnail = data.get("thumbnail")
-    if platform == "bilibili" and thumbnail and thumbnail.startswith("http://"):
+    if thumbnail and thumbnail.startswith("http://"):
         thumbnail = "https://" + thumbnail[7:]
+    video_id = str(data.get("id", ""))
+    thumbnail = await asyncio.to_thread(
+        _localize_thumbnail, platform, video_id, thumbnail)
+    await asyncio.to_thread(
+        _record_history, url, platform, data, formats, thumbnail)
     return {
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
@@ -452,7 +456,55 @@ async def download(request: DownloadRequest):
         raise
 
 
-def _record_history(url: str, platform: str, data: dict, formats: list) -> None:
+_COVER_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
+
+
+def _covers_dir() -> Path:
+    return Path(os.getenv("FRAME_DATA_DIR", "/data")) / "covers"
+
+
+def _localize_thumbnail(platform: str, video_id: str, thumbnail: str | None) -> str | None:
+    """把封面下载到本机并以视频 ID 命名，返回同源引用。
+
+    第三方 CDN（如 B 站 hdslb.com）有防盗链且可能为 http 混合内容，
+    引用外链在页面上不可靠；下载失败时回退原始 URL，失败模式安全。
+    """
+    if not thumbnail or not video_id or not _COVER_NAME.fullmatch(video_id):
+        return thumbnail
+    suffix = Path(urlsplit(thumbnail).path).suffix or ".jpg"
+    if not _COVER_NAME.fullmatch(suffix.lstrip(".")):
+        suffix = ".jpg"
+    target = _covers_dir() / f"{video_id}{suffix}"
+    if not target.exists():
+        try:
+            req = urllib.request.Request(thumbnail, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                payload = r.read()
+            if not payload or len(payload) > 5 * 1024 * 1024:
+                return thumbnail
+            _covers_dir().mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".part")
+            tmp.write_bytes(payload)
+            os.replace(tmp, target)
+        except Exception:
+            return thumbnail
+    return f"/api/covers/{target.name}"
+
+
+@app.get("/api/covers/{name}")
+async def cover_image(name: str):
+    if not _COVER_NAME.fullmatch(name):
+        raise HTTPException(404, "封面不存在")
+    path = _covers_dir() / name
+    if not path.is_file():
+        raise HTTPException(404, "封面不存在")
+    media = "image/webp" if name.endswith(".webp") else "image/jpeg"
+    return FileResponse(path, media_type=media,
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+def _record_history(url: str, platform: str, data: dict, formats: list,
+                    thumbnail: str | None = None) -> None:
     """解析成功后记录到历史表；失败静默，不影响解析响应。"""
     try:
         from .tasks.routes import get_store
@@ -460,7 +512,7 @@ def _record_history(url: str, platform: str, data: dict, formats: list) -> None:
             platform=platform, url=url, video_id=str(data.get("id", "")),
             title=str(data.get("title") or "")[:200],
             description=(data.get("description") or "")[:400],
-            thumbnail=data.get("thumbnail"),
+            thumbnail=thumbnail,
             duration=data.get("duration"),
             uploader=str(data.get("uploader") or data.get("channel") or ""),
             formats_json=json.dumps(formats, ensure_ascii=False))
