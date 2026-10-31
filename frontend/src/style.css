@@ -164,3 +164,13 @@
 
 /* Four navigation tabs on narrow screens */
 .main-navigation{flex-wrap:wrap}
+
+/* Channel metadata language preferences */
+.channel-controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;margin:21px 0 8px}
+.channel-controls .channel-tabs{margin:0}
+.channel-language{display:flex;align-items:center;gap:10px;color:#a9bbce;font-size:12px;font-weight:650}
+.channel-language select{min-width:150px;padding:10px 13px;border:1px solid #35485e;border-radius:9px;background:#172335;color:#e8f3ff;outline:none;cursor:pointer}
+.channel-language select:focus{border-color:#b9f68c}
+.channel-language select:disabled{opacity:.6;cursor:not-allowed}
+.channel-language-tip{color:#859bb0;line-height:1.7;font-size:11px;margin:0 0 21px}
+@media(max-width:700px){.channel-controls{align-items:flex-start}.channel-language{width:100%;justify-content:space-between}.channel-language select{flex:1;max-width:230px}}
