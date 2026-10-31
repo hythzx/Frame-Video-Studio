@@ -9,6 +9,11 @@ const items = ref([])
 
 const PLATFORM_LABEL = { x: 'X', youtube: 'YouTube', bilibili: 'B站' }
 
+function safeThumb(url) {
+  // 存量记录可能仍是 http://：https 页面会拦截混合内容，展示时统一升级。
+  return url ? url.replace(/^http:\/\//, 'https://') : ''
+}
+
 function prettyDuration(seconds) {
   if (!seconds) return '时长未知'
   const total = Math.round(seconds)
@@ -66,7 +71,7 @@ onMounted(load)
 
     <ul v-else class="history-list">
       <li v-for="item in items" :key="item.url" class="history-item">
-        <img v-if="item.thumbnail" :src="item.thumbnail" alt="" class="history-thumb" loading="lazy"/>
+        <img v-if="item.thumbnail" :src="safeThumb(item.thumbnail)" alt="" class="history-thumb" loading="lazy" referrerpolicy="no-referrer"/>
         <div v-else class="history-thumb history-thumb-empty"><History :size="22"/></div>
         <div class="history-meta">
           <div class="history-title-row">
