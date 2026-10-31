@@ -552,7 +552,8 @@ def _record_history(url: str, platform: str, data: dict, formats: list,
     try:
         from .tasks.routes import get_store
         get_store().record_extraction(
-            platform=platform, url=url, video_id=str(data.get("id", "")),
+            platform=(str(data.get("extractor_key") or data.get("extractor") or "other")[:64] if platform == "other" else platform),
+            url=url, video_id=str(data.get("id", "")),
             title=str(data.get("title") or "")[:200],
             description=(data.get("description") or "")[:400],
             thumbnail=thumbnail,
