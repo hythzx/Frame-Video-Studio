@@ -42,6 +42,8 @@ https://www.youtube.com/user/CreatorName
 
 点击 **「加载作品」** 可查看该博主当前公开可访问的内容；分别切换「视频」「Shorts」「直播回放」栏目，并点击 **「加载更多作品」** 向后浏览，直到没有更多条目。
 
+页面右侧提供 **「标题语言」** 选择：**简体中文（默认）**、繁體中文、English、原始语言／自动。切换后会从第一页重新读取当前栏目；后端通过 yt-dlp 的 `youtube:lang` 请求对应语言的标题元数据（选择原始语言时不指定该参数）。翻译取决于 YouTube 实际返回的数据，不保证所有视频都有对应语言的标题。该设置**只影响频道列表元数据**，不会翻译视频或改变下载地址、视频 ID。
+
 在列表中点击单个 **「下载」**，或勾选最多 **20 条**作品后点击 **「下载已选」**。提交后立即创建 `/api/tasks` 任务（自动选择当前最佳兼容 MP4 格式），由独立 Worker 下载与合并；无需保持页面打开。任务状态、失败原因及已完成文件的保存入口显示在频道页面底部。最近任务索引保存在当前浏览器的 localStorage 中，下载文件仍保存在服务器持久卷并按服务端 TTL 清理。
 
 **注意：** 频道是分页浏览，不会一键抓取全频道并自动无限量排队；公开视频可能因删除、私有、会员限制、年龄限制或地区政策而不可读取或下载。频道列表采用 yt-dlp 的 flat-playlist 元信息模式，不代表每条视频必然能成功下载。
@@ -163,7 +165,7 @@ Cookie 仅配置在服务端环境变量中；浏览器只发送 Frame 的独立
 | `GET` | `/api/tasks/{id}` | 查看任务状态 |
 | `GET` | `/api/tasks/{id}/file` | 下载已完成任务的 MP4 |
 | `GET` | `/api/history` | 查询最近解析历史 |
-| `GET` | `/api/youtube/channels` | 频道视频、Shorts、直播回放分页列表（`url`、`section`、`start`） |
+| `GET` | `/api/youtube/channels` | 频道视频、Shorts、直播回放分页列表（`url`、`section`、`start`、`lang`；默认 `zh-CN`） |
 | `POST` | `/api/audio` | 纯音频下载（MP3 / M4A） |
 | `POST` | `/api/subtitle` | 字幕下载（SRT / VTT） |
 | `GET` | `/api/bookmarks` | Cookie 读取 X 私人书签（需 Frame Token） |
