@@ -96,7 +96,8 @@ def _install_bili_cdn_patch() -> None:
     orig_urlopen = YoutubeDL.urlopen
 
     def patched_urlopen(self, req, *args, **kwargs):
-        validate_media_url(getattr(req, "url", "") or "", resolve=True, allow_http=True)
+        validate_media_url(getattr(req, "url", "") or "",
+                           resolve=_dns_resolve_check_enabled(), allow_http=True)
         resp = orig_urlopen(self, req, *args, **kwargs)
         try:
             url = getattr(req, "url", "") or ""
@@ -224,7 +225,7 @@ def extract(url: str) -> dict:
         "ignoreerrors": False,
     }
     try:
-        validate_media_url(url, resolve=True)
+        validate_media_url(url, resolve=_dns_resolve_check_enabled())
         with YoutubeDL(opts) as ydl:
             _apply_cookies(ydl)
             data = ydl.extract_info(url, download=False)
@@ -660,3 +661,12 @@ app.include_router(bookmarks_router)
 
 from .tasks.routes import router as tasks_router
 app.include_router(tasks_router)
+
+def _dns_resolve_check_enabled() -> bool:
+    """DNS 解析级 SSRF 校验开关。
+
+    默认关闭：本部署所在网络的 DNS 对部分境外域名返回污染应答
+    （公网不可达的 A 记录与 2001::1 等 AAAA 记录），解析校验必然误杀；
+    出站安全由透明代理网关承担。在 DNS 可信的网络中设 DNS_RESOLVE_CHECK=1 开启。
+    """
+    return os.getenv("DNS_RESOLVE_CHECK", "") == "1"

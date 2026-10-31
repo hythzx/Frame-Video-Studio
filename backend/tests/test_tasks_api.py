@@ -211,7 +211,6 @@ def test_expired_task_file_returns_410(client, tmp_path):
 def test_dns_fake_ip_from_transparent_proxy_is_allowed(monkeypatch):
     # 透明代理网关用 198.18.0.0/15 fake-ip 应答 DNS：不应误判为内网目标。
     import socket
-    real = socket.getaddrinfo
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.12.34", port))]
@@ -221,13 +220,20 @@ def test_dns_fake_ip_from_transparent_proxy_is_allowed(monkeypatch):
     assert platform == "youtube"
 
 
-def test_dns_fake_ip_from_transparent_proxy_is_allowed(monkeypatch):
-    # 透明代理网关用 198.18.0.0/15 fake-ip 应答 DNS：不应误判为内网目标。
+def test_dns_resolve_check_disabled_by_default(client, monkeypatch):
+    # 本部署网络的 DNS 存在污染应答：默认关闭解析校验，静态校验仍生效。
     import socket
 
-    def fake_getaddrinfo(host, port, *args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.12.34", port))]
+    def poisoned(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", port)),
+                (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001::1", port))]
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
-    url, platform = main.canonical_url("https://www.youtube.com/watch?v=YE7VzlLtp-4")
-    assert platform == "youtube"
+    monkeypatch.delenv("DNS_RESOLVE_CHECK", raising=False)
+    monkeypatch.setattr(socket, "getaddrinfo", poisoned)
+    monkeypatch.setattr(main, "extract", lambda u: {
+        "title": "t", "formats": [{"id": "f", "height": 720}],
+        "audio_available": True, "subtitles": []})
+    monkeypatch.setattr(main, "choices", lambda d, p: [{"id": "f"}])
+    res = client.post("/api/extract", json={
+        "url": "https://www.youtube.com/watch?v=abc", "kind": "video"})
+    assert res.status_code == 200
