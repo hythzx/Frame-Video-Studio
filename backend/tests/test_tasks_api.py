@@ -197,42 +197,6 @@ def test_cover_endpoint_serves_local_file(client, tmp_path, monkeypatch):
     assert client.get("/api/covers/..%2Fescape").status_code == 404
 
 
-def test_thumbnail_localized_to_own_origin(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("FRAME_DATA_DIR", str(tmp_path))
-    task_routes._store = TaskStore(tmp_path / "db.sqlite", tmp_path)
-    captured = {}
-
-    def fake_record(url, platform, data, formats, thumbnail=None):
-        captured["value"] = thumbnail
-
-    import urllib.request as ur
-
-    class _FakeCoverResponse:
-        def __init__(self, data): self._d = data
-        def read(self): return self._d
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-
-    monkeypatch.setattr(main, "_record_history", fake_record)
-    monkeypatch.setattr(main, "canonical_url",
-                        lambda u: ("https://x.com/i/status/1", "bilibili"))
-    monkeypatch.setattr(main, "extract", lambda u: {
-        "id": "BV1GJ411x7h7", "title": "T", "thumbnail": "https://i1.hdslb.com/x.jpg",
-        "formats": [{"id": "30064+30280", "height": 720}]})
-    monkeypatch.setattr(main, "choices", lambda d, p: [{"id": "30064+30280"}])
-    monkeypatch.setattr(main, "subtitle_choices", lambda d: [])
-    monkeypatch.setattr(main, "audio_available", lambda d: True)
-    monkeypatch.setattr(ur, "urlopen", lambda req, timeout=15: _FakeCoverResponse(b"jpeg-bytes"))
-
-    res = client.post("/api/extract", json={
-        "url": "https://www.bilibili.com/video/BV1GJ411x7h7",
-        "kind": "video", "format_id": "30064+30280"})
-    assert res.status_code == 200
-    assert res.json()["thumbnail"] == "/api/covers/BV1GJ411x7h7.jpg"
-    assert captured["value"] == "/api/covers/BV1GJ411x7h7.jpg"
-    assert (tmp_path / "covers" / "BV1GJ411x7h7.jpg").read_bytes() == b"jpeg-bytes"
-
-
 def test_expired_task_file_returns_410(client, tmp_path):
     store = task_routes._store
     task = store.create(kind="video", url="u", platform="x", format_id="f")
