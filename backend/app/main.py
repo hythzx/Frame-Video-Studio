@@ -217,7 +217,6 @@ def _apply_cookies(ydl) -> None:
 
 
 def extract(url: str) -> dict:
-    validate_media_url(url, resolve=True)
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "skip_download": True, "socket_timeout": 15,
@@ -225,6 +224,7 @@ def extract(url: str) -> dict:
         "ignoreerrors": False,
     }
     try:
+        validate_media_url(url, resolve=True)
         with YoutubeDL(opts) as ydl:
             _apply_cookies(ydl)
             data = ydl.extract_info(url, download=False)
