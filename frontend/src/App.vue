@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import BookmarksView from './BookmarksView.vue'
 import HistoryView from './HistoryView.vue'
+import ChannelView from './ChannelView.vue'
 import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, Clipboard, Clock3, Download, ExternalLink, Film, Link2, LoaderCircle, LockKeyhole, Play, ShieldCheck, Sparkles, X, Youtube, Globe2, History } from 'lucide-vue-next'
 
 const activePage = ref('download')
@@ -171,6 +172,7 @@ function useExample(platform) {
       <nav class="main-navigation" aria-label="主导航">
         <button type="button" :class="{active:activePage==='download'}" @click="activePage='download'"><Film :size="16"/> 视频下载</button>
         <button type="button" :class="{active:activePage==='history'}" @click="activePage='history'"><History :size="16"/> 历史记录</button>
+        <button type="button" :class="{active:activePage==='channels'}" @click="activePage='channels'"><Youtube :size="16"/> 频道作品</button>
         <button type="button" :class="{active:activePage==='bookmarks'}" @click="activePage='bookmarks'"><LockKeyhole :size="16"/> 我的收藏</button>
       </nav>
       <template v-if="activePage === 'download'">
@@ -288,6 +290,7 @@ function useExample(platform) {
       </div>
       </template>
       <HistoryView v-else-if="activePage === 'history'" @redownload="redownloadFromHistory"/>
+      <ChannelView v-else-if="activePage === 'channels'"/>
       <BookmarksView v-else/>
     </main>
     <footer class="footer wrap"><span>© {{ new Date().getFullYear() }} FRAME STUDIO</span><span>MADE FOR THE MOMENTS WORTH KEEPING <span class="footer-star">✳</span></span></footer>
