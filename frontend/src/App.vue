@@ -217,7 +217,10 @@ function useExample(platform) {
           <section v-if="video" class="result-card" key="result">
             <div class="card-heading"><div class="step">02 <span>/ YOUR VIDEO</span></div><span class="success"><CheckCircle2 :size="16"/> 解析成功</span></div>
             <div class="result-grid">
-              <div class="preview" :style="video.thumbnail ? { backgroundImage: 'linear-gradient(0deg,rgba(5,9,18,.65),transparent 65%),url(' + JSON.stringify(video.thumbnail) + ')' } : {}">
+              <div class="preview" :class="{ 'no-cover': !video.thumbnail }">
+                <!-- B 站等平台封面有防盗链：no-referrer 才能加载；CSS 背景图不受 meta/属性 referrer 控制故用 img。 -->
+                <img v-if="video.thumbnail" :src="video.thumbnail" referrerpolicy="no-referrer" alt="" class="preview-cover"/>
+                <span class="preview-shade"></span>
                 <span class="preview-play"><Play :size="23" fill="currentColor"/></span>
                 <span class="preview-platform">{{ platformName(video.platform) }}</span>
                 <span class="duration"><Clock3 :size="13"/> {{ prettyDuration(video.duration) }}</span>
