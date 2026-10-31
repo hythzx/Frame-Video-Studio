@@ -2,9 +2,9 @@
 
 ![Frame Video Studio icon](https://raw.githubusercontent.com/hythzx/Frame-Video-Studio/main/frontend/public/favicon.svg)
 
-**A responsive self-hosted downloader for X / Twitter, YouTube and Bilibili.**
+**A responsive self-hosted media downloader for yt-dlp-supported websites.**
 
-This is the **Web image** of [Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio), built with **Vue 3 and Nginx**. Paste a link, explore available media formats, and save videos, audio and subtitle files from one unified interface.
+This is the **Web image** of [Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio), built with **Vue 3 and Nginx**. Paste a public HTTPS media link: yt-dlp identifies the site and detects supported MP4, DASH and native HLS formats. X / Twitter, YouTube and Bilibili have dedicated integrations, and additional compatible websites can be used without changing the frontend.
 
 > The Web image requires the companion `hythzx/video-downloader-api` service. Asynchronous video downloads also require a **Worker** using that same API image.
 
@@ -18,7 +18,7 @@ The container serves HTTP on **port 80**. The Docker Hub image name remains unch
 
 ## Features
 
-- **Three platforms:** X / Twitter, YouTube and Bilibili, detected from the pasted link.
+- **Broad site compatibility:** Automatic yt-dlp extractor detection with dedicated adapters for X / Twitter, YouTube and Bilibili; other sites depend on extractor and MP4 compatibility.
 - **Video:** available resolutions with MP4 download and server-side DASH merging where needed.
 - **Audio:** MP3 and M4A extraction.
 - **Subtitles:** SRT or VTT from available human or automatic caption tracks.
