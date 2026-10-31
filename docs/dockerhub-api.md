@@ -51,6 +51,7 @@ Visit **http://127.0.0.1:8080** on the Docker host. The default binding is local
 | `GET` | `/api/tasks/{id}` | Read video job status |
 | `GET` | `/api/tasks/{id}/file` | Download a completed MP4 |
 | `GET` | `/api/history` | Recent media extraction history |
+| `GET` | `/api/youtube/channels` | Read a bounded page of YouTube channel uploads, Shorts, or stream archives |
 | `POST` | `/api/audio` | Extract MP3 / M4A (**synchronous**) |
 | `POST` | `/api/subtitle` | Export SRT / VTT (**synchronous**) |
 | `POST` | `/api/download` | Legacy synchronous video download |
