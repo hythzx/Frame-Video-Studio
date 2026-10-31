@@ -430,10 +430,9 @@ def download_video(url: str, format_id: str, folder: Path, platform: str) -> Pat
 
 
 @app.get("/api/history")
-async def extraction_history(limit: int = 200):
+async def extraction_history():
     from .tasks.routes import get_store
-    limit = max(1, min(limit, 200))
-    return get_store().list_history(limit=limit)
+    return get_store().list_history()
 
 
 @app.post("/api/download")

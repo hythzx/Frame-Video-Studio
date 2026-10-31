@@ -46,8 +46,6 @@ CREATE TABLE IF NOT EXISTS extracts (
 )
 """
 
-_HISTORY_LIMIT = 200
-
 _TASK_COLUMNS = ("id", "status", "kind", "url", "platform", "format_id",
                  "title", "error", "file_size", "created_at", "updated_at")
 
@@ -91,17 +89,11 @@ class TaskStore:
                 " formats_json=excluded.formats_json, extracted_at=excluded.extracted_at",
                 (url, platform, video_id, title, description, thumbnail,
                  duration, uploader, formats_json, _now()))
-            # 单人自用上限：仅保留最近 200 条解析记录。
-            conn.execute(
-                "DELETE FROM extracts WHERE url NOT IN"
-                " (SELECT url FROM extracts ORDER BY extracted_at DESC LIMIT ?)",
-                (_HISTORY_LIMIT,))
 
-    def list_history(self, limit: int = 200) -> list[dict]:
+    def list_history(self) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM extracts ORDER BY extracted_at DESC, rowid DESC LIMIT ?",
-                (limit,)).fetchall()
+                "SELECT * FROM extracts ORDER BY extracted_at DESC, rowid DESC").fetchall()
         return [dict(row) for row in rows]
 
     def _connect(self) -> sqlite3.Connection:

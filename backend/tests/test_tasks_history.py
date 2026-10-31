@@ -33,11 +33,11 @@ def test_same_url_updates_existing_entry(tmp_path):
     assert history[0]["title"] == "Big Buck Bunny (re-extract)"
 
 
-def test_history_capped_at_limit(tmp_path):
+def test_history_not_capped(tmp_path):
     store = make_store(tmp_path)
     for i in range(210):
         store.record_extraction(**dict(SAMPLE, url=f"u{i}", video_id=str(i), title=f"t{i}"))
-    assert len(store.list_history(limit=300)) == 200
+    assert len(store.list_history()) == 210
 
 
 def test_list_contains_all_display_fields(tmp_path):
