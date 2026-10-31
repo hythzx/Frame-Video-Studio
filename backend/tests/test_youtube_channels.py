@@ -74,6 +74,7 @@ def test_channel_page_flat_and_has_more(monkeypatch):
     assert called["playlistend"] == 25
     assert called["skip_download"] is True
     assert called["download"] is False
+    assert called["extractor_args"]["youtube"]["lang"] == ["zh-CN"]
     assert len(result["items"]) == 24
     assert result["next_start"] == 25
     assert result["channel_title"] == "Example Creator"
@@ -108,7 +109,7 @@ def test_channel_api_validates_section():
 
 
 def test_channel_api_returns_page(monkeypatch):
-    monkeypatch.setattr(youtube_channels, "_channel_page", lambda url, start: {
+    monkeypatch.setattr(youtube_channels, "_channel_page", lambda url, start, lang: {
         "channel_title": "Example Creator",
         "items": [{"id": "abcdefghijk", "title": "Upload"}],
         "next_start": 25,
@@ -118,6 +119,7 @@ def test_channel_api_returns_page(monkeypatch):
     assert res.status_code == 200
     assert res.json()["items"][0]["id"] == "abcdefghijk"
     assert res.json()["next_start"] == 25
+    assert res.json()["lang"] == "zh-CN"
     assert res.json()["url"] == "https://www.youtube.com/@creator/videos"
 
 
@@ -134,3 +136,69 @@ def test_channel_video_task_automatically_selects_highest_mp4(tmp_path, monkeypa
     task = task_routes._store.get(res.json()["id"])
     assert task["platform"] == "youtube"
     assert task["format_id"] == "best"
+
+
+@pytest.mark.parametrize("language,expected", [
+    ("zh-CN", ["zh-CN"]),
+    ("zh-TW", ["zh-TW"]),
+    ("en", ["en"]),
+    ("original", None),
+])
+def test_title_language_passed_to_youtube_extractor(monkeypatch, language, expected):
+    captured = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            captured.update(opts)
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def extract_info(self, url, download=False):
+            return {"title": "Creator", "entries": [
+                {"id": "abcdefghijk", "title": "Original or localized title"}
+            ]}
+
+    monkeypatch.setattr(youtube_channels, "YoutubeDL", FakeYoutubeDL)
+    monkeypatch.setattr(main, "_apply_cookies", lambda ydl: None)
+    result = youtube_channels._channel_page(
+        "https://www.youtube.com/@creator/videos", 1, language
+    )
+    if expected is None:
+        assert "extractor_args" not in captured
+    else:
+        assert captured["extractor_args"] == {"youtube": {"lang": expected}}
+    assert result["items"][0]["url"] == "https://www.youtube.com/watch?v=abcdefghijk"
+
+
+@pytest.mark.parametrize("invalid", ["", "zh", "zh-cn", "es", "fr", "auto", "en-US", "zh-CN,zh-TW"])
+def test_channel_api_rejects_unlisted_languages(invalid):
+    response = client.get("/api/youtube/channels", params={
+        "url": "https://www.youtube.com/@creator", "lang": invalid
+    })
+    assert response.status_code == 422
+
+
+def test_channel_api_forward_language_and_paging(monkeypatch):
+    captured = {}
+
+    def fake_page(url, start, lang):
+        captured.update(url=url, start=start, lang=lang)
+        return {"items": [{"id": "abcdefghijk", "title": "中文标题"}],
+                "channel_title": "创作者", "next_start": 49}
+
+    monkeypatch.setattr(youtube_channels, "_channel_page", fake_page)
+    response = client.get("/api/youtube/channels", params={
+        "url": "https://www.youtube.com/@creator/shorts",
+        "section": "shorts", "start": 25, "lang": "zh-TW",
+    })
+    assert response.status_code == 200
+    assert captured == {
+        "url": "https://www.youtube.com/@creator/shorts",
+        "start": 25, "lang": "zh-TW",
+    }
+    assert response.json()["lang"] == "zh-TW"
+    assert response.json()["items"][0]["title"] == "中文标题"
+
+
+def test_channel_page_rejects_invalid_language_before_network():
+    with pytest.raises(ValueError, match="不支持"):
+        youtube_channels._channel_page("https://www.youtube.com/@creator/videos", 1, "ja")
