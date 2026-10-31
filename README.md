@@ -27,6 +27,25 @@
 - **解析历史**：使用 SQLite 保存最近最多 **200 条解析记录**，可以从历史页面重新选择视频。
 - **X 私人书签（可选）**：使用服务器配置的 X Cookie，以非官方网页接口分页读取自己的书签，支持视频筛选、单条下载以及最多 **5 条**视频打包 ZIP。
 
+- **YouTube 频道作品库**：粘贴博主个人主页，按「视频 / Shorts / 直播回放」分类逐页浏览，选择作品（每次最多 20 条）交给 Worker 异步下载，支持自动选择当前可用的最佳兼容 MP4 格式。
+
+### YouTube channel library / 频道作品下载
+
+在 Web 页面选择 **「频道作品」**，输入 YouTube 频道主页：
+
+```text
+https://www.youtube.com/@creator
+https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx
+https://www.youtube.com/c/CreatorName
+https://www.youtube.com/user/CreatorName
+```
+
+点击 **「加载作品」** 可查看该博主当前公开可访问的内容；分别切换「视频」「Shorts」「直播回放」栏目，并点击 **「加载更多作品」** 向后浏览，直到没有更多条目。
+
+在列表中点击单个 **「下载」**，或勾选最多 **20 条**作品后点击 **「下载已选」**。提交后立即创建 `/api/tasks` 任务（自动选择当前最佳兼容 MP4 格式），由独立 Worker 下载与合并；无需保持页面打开。任务状态、失败原因及已完成文件的保存入口显示在频道页面底部。最近任务索引保存在当前浏览器的 localStorage 中，下载文件仍保存在服务器持久卷并按服务端 TTL 清理。
+
+**注意：** 频道是分页浏览，不会一键抓取全频道并自动无限量排队；公开视频可能因删除、私有、会员限制、年龄限制或地区政策而不可读取或下载。频道列表采用 yt-dlp 的 flat-playlist 元信息模式，不代表每条视频必然能成功下载。
+
 **当前边界：** 异步任务目前只接入**视频**。纯音频、字幕和书签批量下载仍走同步接口，可能受到网络和代理超时影响。当前任务实现提供排队、状态查询、Worker 重启后的中断任务重新排队及已完成视频文件下载；**SSE 实时进度、取消/重试接口、自动过期清理尚未实现**。请勿将这些规划中的能力视为现有功能。
 
 ## Quick start / 快速部署
@@ -107,7 +126,8 @@ Vue 3 + Nginx
       │
       ├── 纯音频 / 字幕 ──→ 同步处理并返回媒体文件
       ├── 历史记录 ─────→ SQLite（最近 200 条解析）
-      └── X 我的收藏 ───→ Cookie + 非官方 X 接口
+      ├── X 我的收藏 ───→ Cookie + 非官方 X 接口
+      └── YouTube 频道 ──→ yt-dlp 平铺频道列表 → 单条/批量创建视频任务
 ```
 
 **为什么视频使用任务模式？** 下载与音视频合并可能持续较长时间。前端首先提交任务，再查询 `queued / resolving / downloading / ready / failed` 等状态；完成后请求文件，减少长时间等待单个 HTTP 响应导致超时的风险。
@@ -139,10 +159,11 @@ Cookie 仅配置在服务端环境变量中；浏览器只发送 Frame 的独立
 | --- | --- | --- |
 | `GET` | `/api/health` | 服务健康检查 |
 | `POST` | `/api/extract` | 提取标题、封面、可用画质、音频及字幕信息 |
-| `POST` | `/api/tasks` | **视频**下载任务创建（202） |
+| `POST` | `/api/tasks` | **视频**下载任务创建（202，频道作品可用 `format_id: best`） |
 | `GET` | `/api/tasks/{id}` | 查看任务状态 |
 | `GET` | `/api/tasks/{id}/file` | 下载已完成任务的 MP4 |
 | `GET` | `/api/history` | 查询最近解析历史 |
+| `GET` | `/api/youtube/channels` | 频道视频、Shorts、直播回放分页列表（`url`、`section`、`start`） |
 | `POST` | `/api/audio` | 纯音频下载（MP3 / M4A） |
 | `POST` | `/api/subtitle` | 字幕下载（SRT / VTT） |
 | `GET` | `/api/bookmarks` | Cookie 读取 X 私人书签（需 Frame Token） |
