@@ -192,7 +192,7 @@ Docker Hub 介绍文档：[API](docs/dockerhub-api.md) · [Web](docs/dockerhub-w
 
 ## License / 开源协议
 
-本项目以 **MIT License** 发布，版权归 **Copyright (c) 2026 赵远（Nick zhao）** 所有。你可以在保留原版权及许可声明的前提下使用、修改、分发及用于商业项目；软件按原样提供，不作担保。
+本项目以 **MIT License** 发布，版权声明为 **Copyright (c) 2026 赵远（Nick zhao）**。你可以在保留原版权及许可声明的前提下使用、修改、分发及用于商业项目；软件按原样提供，不作担保。
 
 完整协议见 [LICENSE](LICENSE)。项目所使用的 yt-dlp、Vue 等第三方依赖分别遵循其自身许可证。
 
