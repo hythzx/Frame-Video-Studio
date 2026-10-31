@@ -18,7 +18,7 @@ from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
-app = FastAPI(title="X Video Studio API", docs_url=None, redoc_url=None)
+app = FastAPI(title="Frame Video Studio API", docs_url=None, redoc_url=None)
 
 
 def _prefer_official_cdn(data: dict) -> None:
