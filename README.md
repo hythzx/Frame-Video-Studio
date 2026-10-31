@@ -4,7 +4,7 @@
 
 **Frame** 是一款面向个人使用的多平台媒体下载工具。粘贴链接即可解析媒体信息、选择画质、下载视频或提取音频与字幕。目前支持 **X / Twitter、YouTube、哔哩哔哩（Bilibili）**，并提供解析历史与可选的 X 私人收藏浏览功能。
 
-> 本项目最初名为 Twitter-Video-Downloader，现已扩展为多平台工具。GitHub 仓库地址与 Docker 镜像名称暂时保持不变，以免影响已有克隆地址和部署。
+> 本项目最初以 Twitter 视频下载为核心，现已扩展为多平台媒体下载工具，仓库已更名为 **Frame-Video-Studio**。Docker Hub 镜像名暂时仍为 `hythzx/video-downloader-api` 和 `hythzx/video-downloader-web`，以保持现有部署兼容。
 
 ## Supported platforms / 支持平台
 
@@ -33,8 +33,8 @@
 要求：Docker Engine 和 Docker Compose Plugin。默认从 Docker Hub 拉取预构建镜像，**无需在部署服务器安装 Node.js、Python 或手动构建 Docker 镜像**。
 
 ```bash
-git clone https://github.com/hythzx/Twitter-Video-Downloader.git
-cd Twitter-Video-Downloader
+git clone https://github.com/hythzx/Frame-Video-Studio.git
+cd Frame-Video-Studio
 
 cp .env.example .env
 docker compose pull
