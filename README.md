@@ -1,175 +1,202 @@
-# Frame — Twitter Video Downloader
+# Frame Video Studio
 
-A polished, self-hosted video downloader for **X / Twitter, YouTube and Bilibili**, for personal use. Built with Vue 3, FastAPI, yt-dlp and Docker Compose. No database or analytics. An optional personal X cookie-backed bookmarks browser requires explicit access control.
+**A self-hosted, multi-platform video, audio and subtitle downloader.**
 
-## Features
-- Paste a public post/video URL from X/Twitter, YouTube or Bilibili; extract title, thumbnail, duration and available video resolutions.
-- X: download progressive MP4 formats with both audio and video.
-- YouTube / Bilibili: download DASH video+audio streams and merge them into MP4 with ffmpeg.
-- Dark, responsive Chinese-language interface.
-- Temporary server-side downloads; files are deleted after transfer.
-- Strict domain/post URL validation, format allowlist and maximum duration/size settings.
+**Frame** 是一款面向个人使用的多平台媒体下载工具。粘贴链接即可解析媒体信息、选择画质、下载视频或提取音频与字幕。目前支持 **X / Twitter、YouTube、哔哩哔哩（Bilibili）**，并提供解析历史与可选的 X 私人收藏浏览功能。
 
-> **Limitations:** Public posts only; extraction depends on yt-dlp and may stop working if X changes its APIs or blocks anonymous requests. HLS-only and split audio/video formats are not supported in this lightweight first version. The download request buffers the full file in the browser. Only download media you're entitled to save. Never expose this service without access control.
+> 本项目最初名为 Twitter-Video-Downloader，现已扩展为多平台工具。GitHub 仓库地址与 Docker 镜像名称暂时保持不变，以免影响已有克隆地址和部署。
 
-## Deploy with Compose
+## Supported platforms / 支持平台
+
+| 平台 | 视频下载 | 音频提取 | 字幕下载 | 其他能力 |
+| --- | --- | --- | --- | --- |
+| **X / Twitter** | 支持可获取的 MP4 视频流 | MP3、M4A（有可用音轨时） | 原平台提供时可用 | 可选：使用服务器端 Cookie 浏览自己的书签、选择下载 |
+| **YouTube** | 选择画质；DASH 音视频流由 FFmpeg 合并为 MP4 | MP3、M4A | 人工字幕、自动字幕（源站提供时） | 支持常见视频与 Shorts 链接 |
+| **哔哩哔哩 / Bilibili** | 选择画质；DASH 音视频流由 FFmpeg 合并为 MP4 | MP3、M4A | 原平台提供时可用 | 可配置登录 Cookie 访问需要登录的画质 |
+
+实际可用的分辨率、音轨与字幕取决于平台返回的数据、账号权限和 yt-dlp 提取器。不是所有视频都具有可下载字幕；本项目不提供 DRM 绕过功能。
+
+## Features / 核心功能
+
+- **多平台统一入口**：自动识别 X、YouTube 和 Bilibili 链接，展示标题、封面、作者、时长和可选格式。
+- **视频下载**：选择画质，必要时由 FFmpeg 合并音视频；下载完成后由浏览器保存 MP4。
+- **纯音频下载**：提取或转码为 **MP3 / M4A**。
+- **字幕下载**：从源站提供的人工字幕或自动字幕中选择语言，导出 **SRT / VTT**；不进行语音识别或自动翻译。
+- **视频异步任务（基础版）**：FastAPI 创建任务，独立 Worker 执行下载，前端轮询状态；成品存储在 Docker 持久卷，避免长时间占用一次 HTTP 下载请求。
+- **解析历史**：使用 SQLite 保存最近最多 **200 条解析记录**，可以从历史页面重新选择视频。
+- **X 私人书签（可选）**：使用服务器配置的 X Cookie，以非官方网页接口分页读取自己的书签，支持视频筛选、单条下载以及最多 **5 条**视频打包 ZIP。
+
+**当前边界：** 异步任务目前只接入**视频**。纯音频、字幕和书签批量下载仍走同步接口，可能受到网络和代理超时影响。当前任务实现提供排队、状态查询、Worker 重启后的中断任务重新排队及已完成视频文件下载；**SSE 实时进度、取消/重试接口、自动过期清理尚未实现**。请勿将这些规划中的能力视为现有功能。
+
+## Quick start / 快速部署
+
+要求：Docker Engine 和 Docker Compose Plugin。默认从 Docker Hub 拉取预构建镜像，**无需在部署服务器安装 Node.js、Python 或手动构建 Docker 镜像**。
 
 ```bash
 git clone https://github.com/hythzx/Twitter-Video-Downloader.git
 cd Twitter-Video-Downloader
+
 cp .env.example .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Open **http://localhost:8080** on the Docker host. The default bind address is `127.0.0.1`, so it is **not exposed to the LAN or internet**.
+浏览器在部署主机访问 **http://127.0.0.1:8080**。
 
-To expose it through a trusted reverse proxy, change `BIND_ADDRESS` in `.env` to the appropriate interface and add authentication + HTTPS at your reverse proxy. Do not expose it publicly without authentication.
+默认仅绑定 `127.0.0.1`，不会直接向局域网或互联网暴露。若从另一台设备访问，请在 `.env` 中调整 `BIND_ADDRESS`，并通过受保护的反向代理配置 HTTPS 和访问认证。
 
-### Configuration
+当前默认的 `compose.yaml` 包含三个服务：
 
-| Variable | Default | Description |
+| 服务 | 镜像 | 职责 |
 | --- | --- | --- |
-| `BIND_ADDRESS` | `127.0.0.1` | Docker port bind address |
-| `PORT` | `8080` | Host port |
-| `MAX_DURATION_SECONDS` | `3600` | Maximum allowed video length |
-| `MAX_DOWNLOAD_MB` | `1024` | Approximate download limit |
-| `TWITTER_COOKIES` | *(empty)* | Optional `auth_token=<v>; ct0=<v>` X login cookies; enables restricted/sensitive posts, sent as a header to X |
-| `BILI_COOKIES` | *(empty)* | Optional Bilibili login cookies (`SESSDATA=<v>; bili_jct=<v>` at minimum) for premium quality and better CDNs |
+| `web` | `hythzx/video-downloader-web` | Vue 3 静态界面与 Nginx 反向代理 |
+| `api` | `hythzx/video-downloader-api` | FastAPI、媒体解析、任务 API |
+| `worker` | `hythzx/video-downloader-api` | 独立执行视频下载任务和 FFmpeg 处理 |
 
-The API stores working files in an in-memory `/tmp` tmpfs sized at 2 GB. Make sure Docker has sufficient RAM for your intended video size; for larger videos, replace the tmpfs with a bounded writable volume.
+`api` 与 `worker` 共用 `frame-data` Docker Volume，将 SQLite 数据库、封面与异步视频下载产物保存在 `/data`；小型临时文件使用容器内的 `/tmp`。**不要删除 `frame-data` 卷，除非确实要清除相关数据和文件。**
 
-## Local development
+> **Compose 文件说明：** 请优先使用仓库根目录的 `compose.yaml`。现有 `compose.deploy.yaml` 仍是旧版双服务部署示例，未包含 Worker 和持久数据卷，不适合当前异步视频下载流程。
 
-Backend (requires Python 3.12 and ffmpeg):
+### Environment variables / 环境变量
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+在服务器本地编辑 `.env`（不要提交真实 Cookie 或密钥）：
 
-Frontend (requires Node.js 24):
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `BIND_ADDRESS` | `127.0.0.1` | Web 端口绑定地址 |
+| `PORT` | `8080` | Web 端口 |
+| `MAX_DURATION_SECONDS` | `3600` | 视频时长限制 |
+| `MAX_DOWNLOAD_MB` | `1024` | 下载大小限制 |
+| `TWITTER_COOKIES` | 空 | 可选，X 登录 Cookie；私人书签功能需配置 `auth_token` 和 `ct0` |
+| `BILI_COOKIES` | 空 | 可选，Bilibili 登录 Cookie |
+| `FRAME_ACCESS_TOKEN` | 空 | 启用私人书签访问所需的独立密钥，至少 20 个字符 |
+| `WORKER_CONCURRENCY` | `2`（Worker 内默认） | 后台视频任务执行线程数 |
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+服务器使用 Cookie 时，请限制 `.env` 文件访问权限，例如 `chmod 600 .env`。使用任何登录 Cookie 都可能遇到过期、访问限制或风控。
 
-The Vite development server proxies `/api` to `http://localhost:8000`.
-
-## API
-
-- `GET /api/health`: health check.
-- `POST /api/extract`: JSON `{"url":"https://x.com/user/status/123..."}`.
-- `POST /api/download`: JSON `{"url":"...", "format_id":"..."}`, returning `video/mp4`.
-
-The server re-extracts the post and verifies the selected format before downloading. MP4 download may take time for large files; the browser currently holds the whole result in memory.
-
-## Updating
+### Update / 更新
 
 ```bash
-git pull
-docker compose up -d --build
+git pull origin main
+docker compose pull
+docker compose up -d
 ```
 
-For extractor compatibility, rebuild regularly so that a current yt-dlp release gets installed. Cookie-based private bookmark browsing is optional. HLS-only media, asynchronous job queues and large-file streaming are not implemented by default.
-
-
-## Docker Hub automatic publishing
-
-GitHub Actions workflow: `.github/workflows/docker-publish.yml`
-
-Configure GitHub repository Actions variable `DOCKERHUB_USERNAME` and Actions secret `DOCKERHUB_TOKEN`. These are the same names used by `data-analysis-agent`; secrets and variables are repository-scoped unless explicitly configured at the organization level.
-
-Pushing to `main` builds and publishes:
-- `<DOCKERHUB_USERNAME>/video-downloader-api:latest`
-- `<DOCKERHUB_USERNAME>/video-downloader-web:latest`
-
-Version tags such as `v1.0.0` also publish `1.0.0` and `1.0` tags. Both images are built for amd64 and arm64. You can run the workflow manually from the GitHub Actions tab.
-
-### Deploy prebuilt images
+检查状态和日志：
 
 ```bash
-cp .env.example .env
-# Set DOCKERHUB_USERNAME=<your Docker Hub username> in .env
-docker compose -f compose.deploy.yaml pull
-docker compose -f compose.deploy.yaml up -d
+docker compose ps
+docker compose logs -f api worker web
 ```
 
-To upgrade prebuilt images:
+## How it works / 下载流程
 
-```bash
-docker compose -f compose.deploy.yaml pull
-docker compose -f compose.deploy.yaml up -d
+```text
+Vue 3 + Nginx
+      │
+      ├── 视频链接 ──→ FastAPI 解析（yt-dlp）
+      │                     │
+      │                     └── 创建视频任务 → SQLite → Worker
+      │                                                │
+      │                                           yt-dlp + FFmpeg
+      │                                                │
+      │                                        /data/files（持久化）
+      │                                                │
+      │                                        浏览器下载 MP4
+      │
+      ├── 纯音频 / 字幕 ──→ 同步处理并返回媒体文件
+      ├── 历史记录 ─────→ SQLite（最近 200 条解析）
+      └── X 我的收藏 ───→ Cookie + 非官方 X 接口
 ```
 
-Set `IMAGE_TAG=1.0.0` in your `.env` to pin an immutable release tag rather than following `latest`. Do not put the Docker Hub access token in `.env`; it is only required by GitHub Actions. The original `compose.yaml` is retained for local builds.
+**为什么视频使用任务模式？** 下载与音视频合并可能持续较长时间。前端首先提交任务，再查询 `queued / resolving / downloading / ready / failed` 等状态；完成后请求文件，减少长时间等待单个 HTTP 响应导致超时的风险。
 
-## Audio and subtitles
+当前前端仍需保持页面打开以等待自动保存，尚未提供完整的任务中心和后台进度通知。设计演进可参阅 [下载任务与超时治理设计](docs/download-task-architecture.md)（部分阶段已实现，文档中仍含早期设计基线）。
 
-After pasting a supported X/Twitter, YouTube or Bilibili video link, the result panel offers up to three download tabs:
+## Optional: My X Bookmarks / 我的 X 收藏
 
-- **Video**: existing MP4 resolution selection.
-- **Audio**: extract or convert the best available audio as MP3 or M4A using FFmpeg.
-- **Subtitles**: choose one of the source's available human-written or automatic subtitle tracks, and save as SRT or VTT. Availability depends on the platform; this feature does not transcribe or translate speech.
+这一功能**仅面向你自己的账号**，不是其他平台的收藏同步能力，也不需要购买 X 官方开发者 API。它通过服务器端 X Cookie 调用非官方网页接口，属于可选功能，**不保证 X 修改接口后仍可正常工作**。
 
-Additional API endpoints:
-
-```http
-POST /api/audio
-Content-Type: application/json
-
-{"url":"https://www.youtube.com/watch?v=VIDEO_ID","audio_format":"mp3"}
-```
-
-```http
-POST /api/subtitle
-Content-Type: application/json
-
-{"url":"https://www.youtube.com/watch?v=VIDEO_ID","language":"en","automatic":false,"subtitle_format":"srt"}
-```
-
-`/api/extract` now also returns `audio_available` and `subtitles` (objects with `language` and `automatic`). Only request a subtitle track from that list. Result files are served as attachments and temporary files are deleted after transfer. Large downloads still run synchronously; progress tracking is not yet implemented.
-
-
-## Private X bookmarks (cookie-based; optional)
-
-Frame includes a **My Bookmarks** menu to browse your own X bookmarks without the paid X developer API. It uses the unofficial [Twikit](https://github.com/d60/twikit) web client for **read-only** bookmark retrieval, then reuses yt-dlp to download video media.
-
-> **Important:** This integration is unofficial and can break when X changes its internal API. X may rate-limit requests or restrict accounts. Read only your own bookmarks, avoid excessive requests, and use it subject to X's terms. No X password, account login automation or third-party cookie storage is involved.
-
-### Setup
-
-1. Log into **your own** X account in a browser. Using its developer tools on `x.com`, find the `auth_token` and `ct0` cookie **values** (optionally `twid`). Treat them like a login password. Do not paste them into a public issue, chat, screenshot, or GitHub file.
-2. In your **server-local** `.env` file, set `TWITTER_COOKIES` to `auth_token=<value>; ct0=<value>`. The existing yt-dlp download functions will reuse these cookies.
-3. Generate a separate private app access key on your own machine:
+1. 在自己的浏览器登录 `x.com`，从浏览器开发者工具获取当前账号的 `auth_token` 和 `ct0` Cookie 值。**不要将 Cookie 发送到聊天、Issue 或 GitHub 仓库。**
+2. 在服务器本地 `.env` 中配置 `TWITTER_COOKIES`，例如：`auth_token=<value>; ct0=<value>`。
+3. 在自己的设备上生成 Frame 的独立访问密钥：
 
    ```bash
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
-   Save the generated value as `FRAME_ACCESS_TOKEN` in `.env`. At least 20 characters are required. **This is not your X Cookie**.
-4. Redeploy: `docker compose -f compose.deploy.yaml up -d` (or `docker compose up -d` if using the local image setup).
-5. Open Frame → **我的收藏**, enter the `FRAME_ACCESS_TOKEN`, and click **读取收藏**.
+   将结果保存到 `.env` 的 `FRAME_ACCESS_TOKEN`；重建容器：`docker compose up -d`。
+4. 进入 Web 页面 **「我的收藏」**，输入 **Frame 访问密钥（不是 X Cookie）**，手动读取书签并选择下载。
 
-The browser sends only the Frame access key in the `X-Frame-Token` request header; X cookies stay on the server. The access key is kept in page memory and is not written to localStorage. The server does not persist a bookmarks database.
+Cookie 仅配置在服务端环境变量中；浏览器只发送 Frame 的独立访问密钥。可分页浏览书签、只显示视频推文、单独下载 MP4 或最多选 5 条打包 ZIP。功能不会自动遍历、定时同步或修改 X 书签。
 
-### Available operations
+非官方 X 接口可能限流或失效；建议低频使用。Frame 访问密钥只保护私人书签相关接口，**不等于整个网站已开启登录鉴权**。
 
-- Manually fetch one page at a time (20 bookmarks per page); next/previous cursor pagination.
-- View original Post, author, text and media thumbnail; filter posts containing video/animated GIF.
-- Download one video as MP4, or up to **5 selected video Posts** as a ZIP. A ZIP may include `failed-ids.txt` for items that were inaccessible or had no downloadable MP4.
-- Requests are sequential and limited; the app does **not** automatically crawl every bookmark or change any bookmark.
-- Batch downloads are synchronous and use server RAM-backed `/tmp` storage. Archive output is limited to 600 MiB and large videos may fail. This is not a persistent download task queue.
+## API / 主要接口
 
-### Private bookmarks API
+| 方法 | 接口 | 作用 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 服务健康检查 |
+| `POST` | `/api/extract` | 提取标题、封面、可用画质、音频及字幕信息 |
+| `POST` | `/api/tasks` | **视频**下载任务创建（202） |
+| `GET` | `/api/tasks/{id}` | 查看任务状态 |
+| `GET` | `/api/tasks/{id}/file` | 下载已完成任务的 MP4 |
+| `GET` | `/api/history` | 查询最近解析历史 |
+| `POST` | `/api/audio` | 纯音频下载（MP3 / M4A） |
+| `POST` | `/api/subtitle` | 字幕下载（SRT / VTT） |
+| `GET` | `/api/bookmarks` | Cookie 读取 X 私人书签（需 Frame Token） |
+| `POST` | `/api/bookmarks/download` | X 收藏视频批量下载（需 Frame Token） |
+| `POST` | `/api/download` | 旧版同步 MP4 下载接口，暂时保留兼容 |
 
-All private routes require `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Without a configured key, these endpoints are disabled.
+视频任务请求示例：
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /api/bookmarks?count=20&cursor=...` | Paginated private bookmarks (cursor optional) |
-| `POST /api/bookmarks/download` | JSON `{"ids":["1234567890123456789"]}`; one item → MP4; multiple items → ZIP |
+```bash
+curl -X POST http://127.0.0.1:8080/api/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID","kind":"video","format_id":"FORMAT_ID_FROM_EXTRACT"}'
+```
 
-**Security:** Do not expose Frame to the public internet without HTTPS, authentication and rate controls. `FRAME_ACCESS_TOKEN` protects the new bookmarks endpoints; the existing general downloader endpoints are not protected by this key, so protect the **whole site** at your reverse proxy if you expose it beyond localhost. Do not use browser network traffic export files containing Cookie headers as issues or debugging attachments.
+请先通过 `/api/extract` 获取实际可用的 `format_id`，不要将示例值直接作为真实格式。音频与字幕接口的参数见 [API Docker Hub README](docs/dockerhub-api.md)。
+
+## Development / 本地开发
+
+- **Backend**：Python 3.12、FastAPI、yt-dlp、FFmpeg、SQLite。
+- **Frontend**：Vue 3、Vite 6、Node.js 24。
+- **Deployment**：Docker Compose、Nginx，两个发布镜像（三个运行服务）。
+
+```bash
+# Backend (ensure FFmpeg is installed)
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+# Frontend (in another terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+Vite 开发服务器将 `/api` 代理到 `http://localhost:8000`。异步视频任务需要另外启动 Worker 并配置 API 与 Worker 共用的可写 `FRAME_DATA_DIR`；仅启动上述两个开发进程不会执行排队下载。
+
+## Docker Hub & CI/CD
+
+GitHub Actions 工作流：[docker-publish.yml](.github/workflows/docker-publish.yml)。推送 `main`、创建 `v*` 版本标签或手动运行，可构建并发布下列镜像：
+
+- `hythzx/video-downloader-api`
+- `hythzx/video-downloader-web`
+
+构建目标为 `linux/amd64` 和 `linux/arm64`。构建流程使用 GitHub Actions 变量 `DOCKERHUB_USERNAME` 和 Secret `DOCKERHUB_TOKEN`；这些凭据只供发布镜像使用，不需要配置在部署服务器中。
+
+Docker Hub 介绍文档：[API](docs/dockerhub-api.md) · [Web](docs/dockerhub-web.md)。
+
+## Limitations & security / 使用须知
+
+- 项目以个人自托管为主。下载是否成功受网站结构、网络、Cookie、地区、付费权限和 yt-dlp 支持情况影响。
+- 只下载你有权保存的媒体；本工具不用于绕过 DRM 或未经授权的内容访问。
+- 对外开放时，请为**整个站点**设置 HTTPS、身份认证和必要的请求限制。私人书签使用的 `FRAME_ACCESS_TOKEN` 不保护其他普通下载、历史及任务接口。
+- 不要在日志、浏览器调试数据、公开仓库或求助截图中暴露 X/Bilibili Cookie。
+- 异步视频任务会持久存储完成文件，现阶段未实现自动清理。请关注 Docker Volume 的磁盘占用。同步音频、字幕与书签 ZIP 仍依赖临时目录。
+
+---
+
+**Frame Video Studio** — One place to save the media you want to keep.
