@@ -190,6 +190,12 @@ GitHub Actions 工作流：[docker-publish.yml](.github/workflows/docker-publish
 
 Docker Hub 介绍文档：[API](docs/dockerhub-api.md) · [Web](docs/dockerhub-web.md)。
 
+## License / 开源协议
+
+本项目以 **MIT License** 发布，版权归 **© 2026 hythzx** 所有。你可以在保留原版权及许可声明的前提下使用、修改、分发及用于商业项目；软件按原样提供，不作担保。
+
+完整协议见 [LICENSE](LICENSE)。项目所使用的 yt-dlp、Vue 等第三方依赖分别遵循其自身许可证。
+
 ## Limitations & security / 使用须知
 
 - 项目以个人自托管为主。下载是否成功受网站结构、网络、Cookie、地区、付费权限和 yt-dlp 支持情况影响。通用模式不是对所有网站、格式或 HLS/DRM 内容的可用性保证。
