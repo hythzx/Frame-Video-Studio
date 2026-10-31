@@ -348,11 +348,15 @@ async def inspect_video(request: VideoRequest):
     if not formats and not audio and not subtitles:
         raise HTTPException(422, "未发现可下载的视频、音频或字幕。")
     await asyncio.to_thread(_record_history, url, platform, data, formats)
+    # B 站封面图 URL 常为 http://：HTTPS 页面属于混合内容，且会被浏览器拦截。
+    thumbnail = data.get("thumbnail")
+    if platform == "bilibili" and thumbnail and thumbnail.startswith("http://"):
+        thumbnail = "https://" + thumbnail[7:]
     return {
         "id": str(data.get("id", "")),
         "title": data.get("title") or "Untitled video",
         "description": (data.get("description") or "")[:400],
-        "thumbnail": data.get("thumbnail"),
+        "thumbnail": thumbnail,
         "duration": data.get("duration"),
         "uploader": data.get("uploader") or data.get("channel") or "",
         "url": url,
