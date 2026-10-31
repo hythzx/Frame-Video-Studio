@@ -162,7 +162,7 @@ function useExample(platform) {
       </a>
       <div class="header-right">
         <span class="private-badge"><span class="green-dot"></span> PERSONAL STUDIO</span>
-        <a class="github-link" href="https://github.com/hythzx/Twitter-Video-Downloader" target="_blank" rel="noreferrer">GitHub <ExternalLink :size="13"/></a>
+        <a class="github-link" href="https://github.com/hythzx/Frame-Video-Studio" target="_blank" rel="noreferrer">GitHub <ExternalLink :size="13"/></a>
       </div>
     </header>
 
