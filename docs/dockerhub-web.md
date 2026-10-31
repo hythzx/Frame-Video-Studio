@@ -23,7 +23,7 @@ The container serves HTTP on **port 80**. The Docker Hub image name remains unch
 - **Audio:** MP3 and M4A extraction.
 - **Subtitles:** SRT or VTT from available human or automatic caption tracks.
 - **Video download jobs:** background Worker downloads with status polling and browser-native file downloads after completion.
-- **YouTube creator library:** Paste a channel homepage, browse Videos / Shorts / live archives with pagination, and queue up to 20 selected works for background download.\n- **Recent history:** records of the latest media extractions, with an option to reselect an item.
+- **YouTube creator library:** Paste a channel homepage, browse Videos / Shorts / live archives with pagination, choose displayed title language (Simplified Chinese by default, Traditional Chinese, English, or extractor default), and queue up to 20 selected works for background download.\n- **Recent history:** records of the latest media extractions, with an option to reselect an item.
 - **My X Bookmarks (optional):** browse personal bookmarks using server-side cookies, filter video posts and select up to five posts for ZIP download.
 - Dark, responsive interface with no third-party analytics.
 
