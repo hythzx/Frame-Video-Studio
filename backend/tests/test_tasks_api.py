@@ -206,3 +206,28 @@ def test_expired_task_file_returns_410(client, tmp_path):
     store.mark_expired(task["id"])
     res = client.get(f"/api/tasks/{task['id']}/file")
     assert res.status_code == 410
+
+
+def test_dns_fake_ip_from_transparent_proxy_is_allowed(monkeypatch):
+    # 透明代理网关用 198.18.0.0/15 fake-ip 应答 DNS：不应误判为内网目标。
+    import socket
+    real = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.12.34", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url, platform = main.canonical_url("https://www.youtube.com/watch?v=YE7VzlLtp-4")
+    assert platform == "youtube"
+
+
+def test_dns_fake_ip_from_transparent_proxy_is_allowed(monkeypatch):
+    # 透明代理网关用 198.18.0.0/15 fake-ip 应答 DNS：不应误判为内网目标。
+    import socket
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.12.34", port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    url, platform = main.canonical_url("https://www.youtube.com/watch?v=YE7VzlLtp-4")
+    assert platform == "youtube"

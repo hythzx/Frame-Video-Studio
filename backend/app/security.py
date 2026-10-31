@@ -7,6 +7,15 @@ import ipaddress
 import socket
 from urllib.parse import urlsplit
 
+# 透明代理网关（Clash/mihomo 等）的 fake-ip 模式会用该保留段应答 DNS；
+# 该段公网不可路由、真实内网亦不使用，命中时视为代理环境而非内网目标。
+_PROXY_FAKE_IP_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
+
+
+def _is_proxy_fake_ip(address: str) -> bool:
+    ip = ipaddress.ip_address(address)
+    return any(ip in net for net in _PROXY_FAKE_IP_NETWORKS)
+
 _BLOCKED_SUFFIXES = (".localhost", ".local", ".internal", ".home.arpa", ".test", ".invalid")
 _BLOCKED_HOSTS = {"localhost", "metadata.google.internal", "metadata", "host.docker.internal"}
 _RESERVED_SUFFIXES = (".example",)
@@ -57,7 +66,9 @@ def validate_media_url(value: str, *, resolve: bool = False, allow_http: bool = 
         except (OSError, ValueError) as exc:
             raise ValueError("无法解析媒体主机名") from exc
         if not records or any(
-            not ipaddress.ip_address(item[4][0]).is_global for item in records
+            not ipaddress.ip_address(item[4][0]).is_global
+            and not _is_proxy_fake_ip(item[4][0])
+            for item in records
         ):
             raise ValueError("目标地址指向内部或非公网网络")
     return value.strip()
