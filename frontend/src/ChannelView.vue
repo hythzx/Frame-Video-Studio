@@ -5,6 +5,7 @@ import { ArrowDownToLine, Check, ExternalLink, Film, LoaderCircle, RefreshCw, Yo
 const STORAGE_KEY = 'frame-youtube-channel-jobs-v1'
 const channelUrl = ref('')
 const section = ref('videos')
+const titleLanguage = ref('zh-CN')
 const channelTitle = ref('')
 const items = ref([])
 const nextStart = ref(null)
@@ -21,6 +22,12 @@ const sections = [
   { value: 'videos', label: '视频' },
   { value: 'shorts', label: 'Shorts' },
   { value: 'streams', label: '直播回放' },
+]
+const titleLanguages = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'en', label: 'English' },
+  { value: 'original', label: '原始语言 / 自动' },
 ]
 const selectedCount = computed(() => selected.value.length)
 const jobList = computed(() => Object.values(jobs.value).sort((a, b) => b.created - a.created))
@@ -70,7 +77,8 @@ async function loadPage(reset = false) {
   }
   try {
     const qs = new URLSearchParams({
-      url: channelUrl.value.trim(), section: section.value, start: String(from),
+      url: channelUrl.value.trim(), section: section.value,
+      lang: titleLanguage.value, start: String(from),
     })
     const res = await fetch('/api/youtube/channels?' + qs, { cache: 'no-store' })
     if (!res.ok) throw new Error(await apiError(res))
@@ -155,7 +163,7 @@ function clearCompleted() {
   persistJobs()
 }
 
-watch(section, () => { if (channelUrl.value.trim()) loadPage(true) })
+watch([section, titleLanguage], () => { if (channelUrl.value.trim()) loadPage(true) })
 onMounted(() => {
   readJobs()
   refreshJobs()
@@ -183,10 +191,19 @@ onUnmounted(() => clearInterval(refreshTimer))
       </button>
     </form>
 
-    <div class="channel-tabs">
-      <button v-for="tab in sections" :key="tab.value" type="button" :disabled="loading"
-              :class="{ active: section === tab.value }" @click="section = tab.value">{{ tab.label }}</button>
+    <div class="channel-controls">
+      <div class="channel-tabs">
+        <button v-for="tab in sections" :key="tab.value" type="button" :disabled="loading"
+                :class="{ active: section === tab.value }" @click="section = tab.value">{{ tab.label }}</button>
+      </div>
+      <label class="channel-language">
+        <span>标题语言</span>
+        <select v-model="titleLanguage" aria-label="YouTube 频道作品标题语言" :disabled="loading">
+          <option v-for="lang in titleLanguages" :key="lang.value" :value="lang.value">{{ lang.label }}</option>
+        </select>
+      </label>
     </div>
+    <p class="channel-language-tip">优先显示所选语言的 YouTube 标题；若源站未提供翻译，仍可能显示原文。切换语言会从第一页重新加载，已提交的下载任务不受影响。</p>
     <p v-if="error" class="channel-error" role="alert">{{ error }}</p>
     <p v-if="notice" class="channel-notice">{{ notice }}</p>
 
