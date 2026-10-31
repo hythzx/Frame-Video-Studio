@@ -161,3 +161,6 @@
  .channel-tools{align-items:stretch}.channel-tool-buttons{width:100%}
  .channel-tool-buttons button{flex:1}.channel-workspace{margin-top:32px}
 }
+
+/* Four navigation tabs on narrow screens */
+.main-navigation{flex-wrap:wrap}
