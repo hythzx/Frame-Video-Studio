@@ -1,24 +1,25 @@
 # Frame Video Studio
 
-**A self-hosted, multi-platform video, audio and subtitle downloader.**
+**A self-hosted media downloader powered by yt-dlp — video, audio and subtitles from many websites.**
 
-**Frame** 是一款面向个人使用的多平台媒体下载工具。粘贴链接即可解析媒体信息、选择画质、下载视频或提取音频与字幕。目前支持 **X / Twitter、YouTube、哔哩哔哩（Bilibili）**，并提供解析历史与可选的 X 私人收藏浏览功能。
+**Frame** 是一款基于 **yt-dlp** 的个人自托管媒体下载工具。粘贴公网 HTTPS 媒体页面链接，由 yt-dlp 自动判断站点与媒体格式，再选择画质、下载视频或提取音频、字幕。**X / Twitter、YouTube、哔哩哔哩**保留专门适配，同时尝试解析 yt-dlp 支持的其他网站（如 Vimeo、TikTok、Instagram 等）。并非支持列表中的所有网站都保证可用。
 
 > 本项目最初以 Twitter 视频下载为核心，现已扩展为多平台媒体下载工具，仓库已更名为 **Frame-Video-Studio**。Docker Hub 镜像名暂时仍为 `hythzx/video-downloader-api` 和 `hythzx/video-downloader-web`，以保持现有部署兼容。
 
-## Supported platforms / 支持平台
+## Site support / 网站兼容性
 
 | 平台 | 视频下载 | 音频提取 | 字幕下载 | 其他能力 |
 | --- | --- | --- | --- | --- |
 | **X / Twitter** | 支持可获取的 MP4 视频流 | MP3、M4A（有可用音轨时） | 原平台提供时可用 | 可选：使用服务器端 Cookie 浏览自己的书签、选择下载 |
 | **YouTube** | 选择画质；DASH 音视频流由 FFmpeg 合并为 MP4 | MP3、M4A | 人工字幕、自动字幕（源站提供时） | 支持常见视频与 Shorts 链接 |
 | **哔哩哔哩 / Bilibili** | 选择画质；DASH 音视频流由 FFmpeg 合并为 MP4 | MP3、M4A | 原平台提供时可用 | 可配置登录 Cookie 访问需要登录的画质 |
+| **其他 yt-dlp 网站** | 自动识别可用的 MP4、DASH、原生 HLS（m3u8）媒体流 | 有音轨时可用 | 源站提供时可用 | 依赖对应提取器、媒体编码与服务器访问权限 |
 
-实际可用的分辨率、音轨与字幕取决于平台返回的数据、账号权限和 yt-dlp 提取器。不是所有视频都具有可下载字幕；本项目不提供 DRM 绕过功能。
+目前统一视频选择器以 **MP4 成品**为目标，支持兼容的 MP4 直链、DASH 音视频合并和原生 HLS（m3u8）流；WebM、特殊编码、DRM 和其他无法合并/封装为 MP4 的格式仍可能不受支持。实际分辨率、音轨、字幕取决于网站、登录态与 yt-dlp 提取器。完整的 [yt-dlp 提取器列表](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) 不等于所有站点都可保证下载成功。
 
 ## Features / 核心功能
 
-- **多平台统一入口**：自动识别 X、YouTube 和 Bilibili 链接，展示标题、封面、作者、时长和可选格式。
+- **通用媒体入口**：接受公网 HTTPS 媒体页面链接，由 yt-dlp 自动识别网站；展示标题、封面、作者、时长和兼容的下载格式。
 - **视频下载**：选择画质，必要时由 FFmpeg 合并音视频；下载完成后由浏览器保存 MP4。
 - **纯音频下载**：提取或转码为 **MP3 / M4A**。
 - **字幕下载**：从源站提供的人工字幕或自动字幕中选择语言，导出 **SRT / VTT**；不进行语音识别或自动翻译。
@@ -191,7 +192,8 @@ Docker Hub 介绍文档：[API](docs/dockerhub-api.md) · [Web](docs/dockerhub-w
 
 ## Limitations & security / 使用须知
 
-- 项目以个人自托管为主。下载是否成功受网站结构、网络、Cookie、地区、付费权限和 yt-dlp 支持情况影响。
+- 项目以个人自托管为主。下载是否成功受网站结构、网络、Cookie、地区、付费权限和 yt-dlp 支持情况影响。通用模式不是对所有网站、格式或 HLS/DRM 内容的可用性保证。
+- 通用 URL 模式会检查 HTTPS 链接、禁止本机/IP 直连及非公网 DNS 地址，并检查 yt-dlp 常规网络请求和封面重定向；这不是完整的 SSRF 沙箱。**如需部署在不可信网络，仍必须使用容器级出站防火墙/网络隔离，并保护站点访问。**
 - 只下载你有权保存的媒体；本工具不用于绕过 DRM 或未经授权的内容访问。
 - 对外开放时，请为**整个站点**设置 HTTPS、身份认证和必要的请求限制。私人书签使用的 `FRAME_ACCESS_TOKEN` 不保护其他普通下载、历史及任务接口。
 - 不要在日志、浏览器调试数据、公开仓库或求助截图中暴露 X/Bilibili Cookie。
