@@ -86,7 +86,7 @@ docker compose up -d
 
 ## License
 
-[MIT License](https://github.com/hythzx/Frame-Video-Studio/blob/main/LICENSE) · Copyright © 2026 hythzx. Third-party components follow their own licenses.
+[MIT License](https://github.com/hythzx/Frame-Video-Studio/blob/main/LICENSE) · Copyright (c) 2026 赵远（Nick zhao）. Third-party components follow their own licenses.
 
 ## Source and releases
 
