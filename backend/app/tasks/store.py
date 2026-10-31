@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     error TEXT,
     file_size INTEGER,
     idempotency_key TEXT UNIQUE,
+    params_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -69,10 +70,11 @@ class TaskStore:
             conn.execute(_SCHEMA)
             conn.execute(_HISTORY_SCHEMA)
             # 轻量迁移：为既有数据库补齐后加的列。
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN title TEXT")
-            except sqlite3.OperationalError:
-                pass
+            for column in ("title TEXT", "params_json TEXT"):
+                try:
+                    conn.execute(f"ALTER TABLE tasks ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass
 
     def record_extraction(self, platform: str, url: str, video_id: str, title: str,
                           description: str | None, thumbnail: str | None,
@@ -105,14 +107,18 @@ class TaskStore:
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
+    def file_dir(self, task_id: str) -> Path:
+        return self.data_dir / "files" / task_id
+
     def file_path(self, task_id: str) -> Path:
-        return self.data_dir / "files" / task_id / "output.mp4"
+        return self.file_dir(task_id) / "output.mp4"
 
     def work_dir(self, task_id: str) -> Path:
         return self.data_dir / "work" / task_id
 
     def create(self, kind: str, url: str, platform: str, format_id: str,
-               idempotency_key: str | None = None) -> dict:
+               idempotency_key: str | None = None,
+               params_json: str | None = None) -> dict:
         with self._connect() as conn:
             if idempotency_key:
                 row = conn.execute(
@@ -124,10 +130,10 @@ class TaskStore:
             task_id = str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO tasks (id, status, kind, url, platform, format_id,"
-                " idempotency_key, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " idempotency_key, params_json, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (task_id, QUEUED, kind, url, platform, format_id,
-                 idempotency_key, _now(), _now()))
+                 idempotency_key, params_json, _now(), _now()))
         task = self.get(task_id)
         task["reused"] = False
         return task

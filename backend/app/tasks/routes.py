@@ -6,6 +6,8 @@ import json
 import re
 from uuid import UUID
 
+_TWEET_ID_RE = re.compile(r"^[0-9]{5,25}$")
+
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -31,9 +33,10 @@ _TASK_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 
 class TaskCreateRequest(BaseModel):
-    url: str = Field(min_length=12, max_length=2048)
+    url: str = Field(default="", max_length=2048)
     kind: str = Field(default="video", pattern=r"^(video|audio|subtitle|bookmark_batch)$")
     format_id: str = Field(default="", max_length=120)
+    ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 def _validate_id(task_id: str) -> str:
@@ -48,15 +51,28 @@ def _validate_id(task_id: str) -> str:
 async def create_task(
     request: TaskCreateRequest,
     idempotency_key: str | None = Header(default=None, max_length=128),
+    x_frame_token: str | None = Header(default=None, alias="X-Frame-Token"),
 ):
     from ..main import canonical_url
 
+    key = (idempotency_key or "").strip() or None
+    if request.kind == "bookmark_batch":
+        ids = list(dict.fromkeys(request.ids))
+        if not ids or not all(_TWEET_ID_RE.fullmatch(x) for x in ids) or len(ids) > 5:
+            raise HTTPException(422, "推文 ID 无效，单次最多 5 条。")
+        # 收藏批量下载涉及账号数据，创建即校验 Frame 访问密钥。
+        from ..bookmarks import _require_access
+        _require_access(x_frame_token)
+        task = get_store().create(
+            kind="bookmark_batch", url="", platform="x", format_id="",
+            idempotency_key=key, params_json=json.dumps({"ids": ids}))
+        return {"id": task["id"], "status": task["status"],
+                "status_url": f"/api/tasks/{task['id']}", "reused": task.get("reused", False)}
     if request.kind != "video":
         raise HTTPException(422, "该下载类型尚未接入任务系统（阶段 C 迁移）。")
     if not request.format_id.strip():
         raise HTTPException(422, "请提供要下载的画质格式。")
     url, platform = canonical_url(request.url)
-    key = (idempotency_key or "").strip() or None
     task = get_store().create(kind="video", url=url, platform=platform,
                               format_id=request.format_id.strip(), idempotency_key=key)
     return {
@@ -101,8 +117,19 @@ async def task_file(task_id: str):
         raise HTTPException(410, "文件已过期清理，请重新创建下载任务。")
     if task["status"] != READY:
         raise HTTPException(409, "任务尚未完成，文件不可下载。")
-    path = store.file_path(task["id"])
+    matches = sorted(store.file_dir(task["id"]).glob("output.*"))
+    path = matches[0] if matches else store.file_path(task["id"])
     if not path.is_file():
         raise HTTPException(410, "文件已过期或不存在。")
+    if task["kind"] == "bookmark_batch":
+        try:
+            ids = (json.loads(task.get("params_json") or "{}").get("ids")) or [task["id"]]
+        except ValueError:
+            ids = [task["id"]]
+        if path.suffix == ".mp4":
+            return FileResponse(path, media_type="video/mp4",
+                                filename=f"x-{ids[0]}.mp4")
+        return FileResponse(path, media_type="application/zip",
+                            filename="frame-bookmarks.zip")
     return FileResponse(path, media_type="video/mp4",
                         filename=_download_filename(task))

@@ -30,7 +30,7 @@ def test_create_rejects_invalid_url(client):
 
 def test_create_rejects_unsupported_kind(client):
     res = client.post("/api/tasks", json={
-        "url": "https://x.com/i/status/123", "kind": "bookmark_batch", "ids": ["1234567890"]})
+        "url": "https://x.com/i/status/123", "kind": "hologram"})
     assert res.status_code == 422
 
 
@@ -237,3 +237,29 @@ def test_dns_resolve_check_disabled_by_default(client, monkeypatch):
     res = client.post("/api/extract", json={
         "url": "https://www.youtube.com/watch?v=abc", "kind": "video"})
     assert res.status_code == 200
+
+
+def test_create_bookmark_batch_requires_token(client, monkeypatch):
+    monkeypatch.delenv("FRAME_ACCESS_TOKEN", raising=False)
+    res = client.post("/api/tasks", headers={"X-Frame-Token": "x"}, json={
+        "kind": "bookmark_batch", "ids": ["1234567890"]})
+    assert res.status_code == 503
+
+    monkeypatch.setenv("FRAME_ACCESS_TOKEN", "test-secret-value-longer-than-twenty")
+    bad = client.post("/api/tasks", headers={"X-Frame-Token": "wrong"}, json={
+        "kind": "bookmark_batch", "ids": ["1234567890"]})
+    assert bad.status_code == 401
+
+
+def test_create_bookmark_batch_validates_ids(client, monkeypatch):
+    monkeypatch.setenv("FRAME_ACCESS_TOKEN", "test-secret-value-longer-than-twenty")
+    monkeypatch.setenv("TWITTER_COOKIES", "auth_token=t; ct0=c")
+    headers = {"X-Frame-Token": "test-secret-value-longer-than-twenty"}
+    for ids in (["../etc"], ["1"] * 6, []):
+        res = client.post("/api/tasks", headers=headers, json={
+            "kind": "bookmark_batch", "ids": ids})
+        assert res.status_code == 422
+    ok = client.post("/api/tasks", headers=headers, json={
+        "kind": "bookmark_batch", "ids": ["1234567890"]})
+    assert ok.status_code == 202
+    assert ok.json()["status"] == "queued"

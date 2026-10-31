@@ -11,6 +11,12 @@ watch(accessToken, value => {
 })
 const loading = ref(false)
 const downloading = ref(false)
+const taskPhase = ref('')
+
+const PHASE_TEXT = {
+  queued: '排队中…', resolving: '解析中…', downloading: '逐条下载中…',
+  postprocessing: '打包中…',
+}
 const error = ref('')
 const notice = ref('')
 const items = ref([])
@@ -79,27 +85,37 @@ async function save(ids) {
   error.value = ''
   notice.value = ''
   try {
-    const res = await fetch('/api/bookmarks/download', {
+    // 任务化：Worker 在服务端后台逐条下载打 ZIP，浏览器关闭也不丢任务。
+    const key = (crypto.randomUUID && crypto.randomUUID()) ||
+      'batch-' + Date.now() + '-' + Math.random().toString(36).slice(2)
+    const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Frame-Token': accessToken.value.trim(),
+        'Idempotency-Key': key,
       },
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ kind: 'bookmark_batch', ids }),
     })
     if (!res.ok) throw new Error(await apiError(res))
-    const blob = await res.blob()
-    const link = document.createElement('a')
-    const uri = URL.createObjectURL(blob)
-    link.href = uri
-    link.download = ids.length === 1 ? 'x-' + ids[0] + '.mp4' : 'frame-bookmarks.zip'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    setTimeout(() => URL.revokeObjectURL(uri), 60000)
-    notice.value = '文件已开始保存。批量 ZIP 中的 failed-ids.txt 会记录失败的推文 ID。'
+    const { id } = await res.json()
+    taskPhase.value = '排队中…'
+    for (;;) {
+      await new Promise(r => setTimeout(r, 2000))
+      const s = await fetch('/api/tasks/' + id, { cache: 'no-store' })
+      if (!s.ok) throw new Error('任务状态查询失败')
+      const task = await s.json()
+      taskPhase.value = PHASE_TEXT[task.status] || task.status
+      if (task.status === 'ready') {
+        notice.value = '打包完成，已开始保存。ZIP 中的 failed-ids.txt 会记录失败的推文 ID。'
+        window.location.href = '/api/tasks/' + id + '/file'
+        return
+      }
+      if (task.status === 'failed') throw new Error(task.error || '批量下载失败')
+      if (task.status === 'canceled') throw new Error('任务已取消')
+    }
   } catch (e) { error.value = e.message || '下载失败' }
-  finally { downloading.value = false }
+  finally { downloading.value = false; taskPhase.value = '' }
 }
 </script>
 
@@ -135,7 +151,7 @@ async function save(ids) {
       <button type="button" class="bookmark-outline-btn" @click="togglePage">选择/取消本页视频</button>
       <button type="button" class="primary-btn bookmark-batch-btn" :disabled="!selectedCount || downloading" @click="save(selected)">
         <LoaderCircle v-if="downloading" class="spin" :size="16"/><ArrowDownToLine v-else :size="16"/>
-        {{ downloading ? '正在准备下载…' : '下载已选 ' + selectedCount + ' 条' }}
+        {{ downloading ? (taskPhase || '正在准备…') + ' · 保持页面打开' : '下载已选 ' + selectedCount + ' 条' }}
       </button>
     </div>
 

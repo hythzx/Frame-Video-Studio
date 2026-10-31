@@ -110,3 +110,13 @@ def test_mark_expired_keeps_metadata(tmp_path):
     assert row["status"] == "expired"
     assert row["file_size"] == 10 and row["title"] is None or True  # 元数据保留
     assert row["url"] == "u"
+
+
+def test_create_with_params_json(tmp_path):
+    store = make_store(tmp_path)
+    task = store.create(kind="bookmark_batch", url="", platform="x", format_id="",
+                        idempotency_key="batch-1",
+                        params_json='{"ids": ["1234567890"]}')
+    fetched = store.get(task["id"])
+    import json
+    assert json.loads(fetched["params_json"]) == {"ids": ["1234567890"]}

@@ -3,6 +3,7 @@
 启动时恢复中断任务；执行失败分类记录，不无限重试。并发由
 WORKER_CONCURRENCY（默认 2）控制。
 """
+import json
 import shutil
 import sys
 import time
@@ -17,16 +18,23 @@ def _execute(store: TaskStore, task: dict) -> None:
     work_dir = store.work_dir(task_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
-        # 解析阶段：提取元数据（标题供文件命名）；格式匹配与降级
-        # 由 download_video 在其自身的单次提取内完成，避免跨提取 ID 漂移。
         store.update_status(task_id, RESOLVING)
-        data = app_main.extract(task["url"])
-        store.set_title(task_id, str(data.get("title") or ""))
+        if task["kind"] == "bookmark_batch":
+            # 收藏批量：复用 bookmarks 的顺序下载与 ZIP 打包逻辑。
+            from .. import bookmarks as app_bookmarks
+            ids = (json.loads(task.get("params_json") or "{}").get("ids")) or []
+            output = app_bookmarks._download_bookmarks(ids, work_dir)
+        else:
+            # 解析阶段：提取元数据（标题供文件命名）；格式匹配与降级
+            # 由 download_video 在其自身的单次提取内完成，避免跨提取 ID 漂移。
+            data = app_main.extract(task["url"])
+            store.set_title(task_id, str(data.get("title") or ""))
 
-        store.update_status(task_id, DOWNLOADING)
-        output = app_main.download_video(task["url"], task["format_id"], work_dir, task["platform"])
+            store.update_status(task_id, DOWNLOADING)
+            output = app_main.download_video(
+                task["url"], task["format_id"], work_dir, task["platform"])
 
-        target = store.file_path(task_id)
+        target = store.file_dir(task_id) / f"output{output.suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(output), str(target))
         store.complete(task_id, file_size=target.stat().st_size)
