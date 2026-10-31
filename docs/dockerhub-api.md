@@ -1,128 +1,106 @@
-# Frame Video Downloader — API
+# Frame Video Studio — API
 
-**Self-hosted video extraction and download API for X / Twitter, YouTube and Bilibili.**
+**Self-hosted multi-platform media extraction, downloading and processing API.**
 
-This is the backend image of [Frame Video Studio](https://github.com/hythzx/Twitter-Video-Downloader). Built with **FastAPI, yt-dlp and FFmpeg**, it extracts public video metadata, lists available resolutions, downloads the selected format and merges separate audio/video streams when supported.
+[Frame Video Studio](https://github.com/hythzx/Frame-Video-Studio) supports **X / Twitter, YouTube and Bilibili**. The backend is built with **FastAPI, yt-dlp and FFmpeg** and powers video format selection, audio extraction, subtitle downloads, download tasks, recent extraction history and an optional private X bookmarks viewer.
 
-> This is the **API image only**, not a web interface. For the complete UI, deploy it together with \`video-downloader-web\`.
+> This is the **backend image**. Deploy it alongside the [Web image](https://hub.docker.com/r/hythzx/video-downloader-web). The same API image also runs the dedicated background **Worker** service.
 
-## Image
+## Docker image
 
 ```bash
-docker pull <dockerhub-username>/video-downloader-api:latest
+docker pull hythzx/video-downloader-api:latest
 ```
 
-Replace `<dockerhub-username>` with the image publisher's Docker Hub username. The container listens on **port 8000**.
+The API container listens on **port 8000**. GitHub Actions builds amd64 and arm64 images. The Docker Hub image name remains unchanged after the GitHub repository was renamed.
 
-**Supported platforms**
+## Supported media features
 
-| Platform | Processing |
-| --- | --- |
-| X / Twitter | Extracts supported downloadable MP4 video formats |
-| YouTube | Selects DASH video and audio streams and merges with FFmpeg |
-| Bilibili | Selects DASH video and audio streams and merges with FFmpeg |
+| Platform | Video | Audio | Subtitles |
+| --- | --- | --- | --- |
+| **X / Twitter** | Download available MP4 formats | MP3 / M4A when an audio track is accessible | Where provided by X |
+| **YouTube** | Resolution selection; DASH video/audio merging via FFmpeg | MP3 / M4A | Human and automatic captions where provided |
+| **Bilibili** | Resolution selection; DASH video/audio merging via FFmpeg | MP3 / M4A | Where available |
 
-Availability depends on yt-dlp, region, platform restrictions, access rights and whether a compatible media format is provided.
+Actual formats depend on platform access, extractor compatibility, region and valid cookies when required. The application does not bypass DRM.
 
 ## Recommended deployment
 
-The API is designed to work with the companion web image over a private Compose network. Use the repository's production Compose file:
+The current default Compose file runs **three services**: `web`, `api` and `worker`. API and Worker share a Docker volume for SQLite metadata, cover images and completed video files.
 
 ```bash
-git clone https://github.com/hythzx/Twitter-Video-Downloader.git
-cd Twitter-Video-Downloader
+git clone https://github.com/hythzx/Frame-Video-Studio.git
+cd Frame-Video-Studio
 cp .env.example .env
-# Edit .env and set DOCKERHUB_USERNAME=<dockerhub-username>
-docker compose -f compose.deploy.yaml pull
-docker compose -f compose.deploy.yaml up -d
+docker compose pull
+docker compose up -d
 ```
 
-Visit `http://localhost:8080` on the Docker host. The default deployment binds the web port to `127.0.0.1` and does not publish the API port.
+Visit **http://127.0.0.1:8080** on the Docker host. The default binding is local-only.
 
-## Standalone API example
+[View the current Compose configuration](https://github.com/hythzx/Frame-Video-Studio/blob/main/compose.yaml).
 
-For local testing only:
+## Main API endpoints
 
-```bash
-docker run --rm \
-  --name frame-api \
-  --read-only \
-  --tmpfs /tmp:rw,size=2g,mode=1777 \
-  -p 127.0.0.1:8000:8000 \
-  -e MAX_DURATION_SECONDS=3600 \
-  -e MAX_DOWNLOAD_MB=1024 \
-  <dockerhub-username>/video-downloader-api:latest
-```
-
-Test the health endpoint:
-
-```bash
-curl http://127.0.0.1:8000/api/health
-```
-
-## API endpoints
-
-| Method | Endpoint | Purpose |
+| Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Health check |
-| `POST` | `/api/extract` | Extract metadata and available format IDs |
-| `POST` | `/api/download` | Download a selected format as an MP4 response |
+| `POST` | `/api/extract` | Extract media metadata and available formats |
+| `POST` | `/api/tasks` | Create an asynchronous **video** download job (HTTP 202) |
+| `GET` | `/api/tasks/{id}` | Read video job status |
+| `GET` | `/api/tasks/{id}/file` | Download a completed MP4 |
+| `GET` | `/api/history` | Recent media extraction history |
+| `POST` | `/api/audio` | Extract MP3 / M4A (**synchronous**) |
+| `POST` | `/api/subtitle` | Export SRT / VTT (**synchronous**) |
+| `POST` | `/api/download` | Legacy synchronous video download |
+| `GET` | `/api/bookmarks` | Optional private X bookmarks (requires an access token) |
+| `POST` | `/api/bookmarks/download` | Optional X bookmark video download / ZIP |
 
-**Extract example**
+Example extraction:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/extract \
+curl -X POST http://127.0.0.1:8080/api/extract \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://www.youtube.com/watch?v=YOUR_VIDEO_ID"}'
+  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
 
-The response includes `platform`, `id`, `title`, `thumbnail`, `duration`, `uploader`, `url`, and a `formats` array. Use a returned `formats[].id` to request a download:
+Create a video download task using a `format_id` returned by extraction:
 
 ```bash
-curl -L -X POST http://127.0.0.1:8000/api/download \
+curl -X POST http://127.0.0.1:8080/api/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://www.youtube.com/watch?v=YOUR_VIDEO_ID","format_id":"FORMAT_ID_FROM_EXTRACT"}' \
-  --output video.mp4
+  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID","kind":"video","format_id":"FORMAT_ID_FROM_EXTRACT"}'
 ```
 
-## Environment variables
+Video downloads run in the Worker and return a task ID immediately. Audio, subtitles and bookmark ZIP downloads are not yet migrated to this task system; long synchronous requests may still encounter timeouts.
 
-| Name | Default | Notes |
+## Environment and storage
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `MAX_DURATION_SECONDS` | `3600` | Reject videos exceeding this duration |
-| `MAX_DOWNLOAD_MB` | `1024` | Maximum configured output size in MiB |
-| `TWITTER_COOKIES` | Unset | Optional X cookies; keep credentials secret |
-| `BILI_COOKIES` | Unset | Optional Bilibili cookies; keep credentials secret |
-| `PYTHONUNBUFFERED` | `1` in Compose | Unbuffered Python logs |
+| `MAX_DURATION_SECONDS` | `3600` | Maximum allowed media duration |
+| `MAX_DOWNLOAD_MB` | `1024` | Download size limit |
+| `TWITTER_COOKIES` | Unset | Optional X login cookies; required for bookmark browsing |
+| `BILI_COOKIES` | Unset | Optional Bilibili login cookies |
+| `FRAME_ACCESS_TOKEN` | Unset | Independent access key protecting private bookmark APIs |
+| `WORKER_CONCURRENCY` | `2` | Background video task concurrency in the Worker |
 
-Some platforms may require valid login cookies or additional platform verification. Cookies do not guarantee access and should never be committed to Git.
+Default `compose.yaml` mounts the named volume `frame-data` at `/data`. The API and Worker use this volume for SQLite and completed video files, with a smaller tmpfs for ephemeral work. Do not remove that volume unless intentionally deleting the data.
 
-## Security and limitations
+## Optional X bookmarks
 
-- Intended for **personal use** and authorized media only.
-- Do not expose the API publicly without an authentication layer, rate limiting and HTTPS.
-- Downloads are written to a temporary directory and removed after the response is sent.
-- Large files may require substantial temporary storage and time for audio/video merging. The supplied Compose configuration uses a 2 GiB `/tmp` tmpfs.
-- Extraction can fail when a platform changes its behavior or blocks the server's IP.
-- The service does not contain a database or permanent video library.
+The application can read **your own X bookmarks** using server-side `auth_token` and `ct0` cookies through an **unofficial X web interface**. This is not the official X API; its behavior and rate limits may change.
 
-## Tags and source
+The bookmarks routes require `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Configure the cookies and a randomly generated Frame access token in your **server-local** `.env`. Do not place real cookies or tokens in Git, logs or screenshots. The access token only guards bookmark routes: protect the **entire application** with HTTPS and authentication before exposing it beyond localhost.
 
-GitHub Actions publishes `latest` from `main`, commit SHA tags, and semantic version tags from `v*` Git tags. Images are built for **linux/amd64** and **linux/arm64**.
+[See the setup guide](https://github.com/hythzx/Frame-Video-Studio/blob/main/README.md).
 
-**Source:** https://github.com/hythzx/Twitter-Video-Downloader
+## Source and releases
 
-**Deployment reference:** [compose.deploy.yaml](https://github.com/hythzx/Twitter-Video-Downloader/blob/main/compose.deploy.yaml)
+- **GitHub:** https://github.com/hythzx/Frame-Video-Studio
+- **Compose:** https://github.com/hythzx/Frame-Video-Studio/blob/main/compose.yaml
+- **Web image:** `hythzx/video-downloader-web`
 
-## Optional: Private X bookmarks
+GitHub Actions publishes `latest` for the default branch, commit SHA tags, and semantic version tags for `v*` releases on **linux/amd64** and **linux/arm64**.
 
-This API image also includes an **opt-in, read-only X bookmarks browser** powered by Twikit. It reuses the server's own `TWITTER_COOKIES` (`auth_token` and `ct0`) instead of using the paid X developer API.
-
-Set **both** `TWITTER_COOKIES` and a randomly generated `FRAME_ACCESS_TOKEN` (minimum 20 characters) in your **server-local** `.env` and restart the service. The token is a separate app access key, **not** an X Cookie.
-
-- `GET /api/bookmarks?count=20&cursor=...` — one page of your own private bookmarks.
-- `POST /api/bookmarks/download` — select 1–5 numeric Tweet IDs for MP4 or ZIP download.
-
-Both require the request header `X-Frame-Token: <FRAME_ACCESS_TOKEN>`. Access is disabled when the token or X cookies are missing. No bookmarks are permanently stored. The unofficial interface can change and may be subject to account rate limits. Do not expose your credentials or open the application to the public without additional access controls.
-
-[Setup and security details](https://github.com/hythzx/Twitter-Video-Downloader#private-x-bookmarks-cookie-based-optional).
+Use this software only for media you are authorized to download.
