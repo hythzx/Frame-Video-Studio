@@ -99,6 +99,8 @@ async function save(ids) {
     })
     if (!res.ok) throw new Error(await apiError(res))
     const { id } = await res.json()
+    // 任务创建成功即开始下载：反选本次提交的条目，方便继续挑选下一批。
+    selected.value = selected.value.filter(x => !ids.includes(x))
     taskPhase.value = '排队中…'
     for (;;) {
       await new Promise(r => setTimeout(r, 2000))
