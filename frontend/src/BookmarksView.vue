@@ -95,7 +95,15 @@ async function save(ids) {
         'X-Frame-Token': accessToken.value.trim(),
         'Idempotency-Key': key,
       },
-      body: JSON.stringify({ kind: 'bookmark_batch', ids }),
+      body: JSON.stringify({
+        kind: 'bookmark_batch',
+        ids,
+        // Reuse the full_text already returned by the bookmarks API for
+        // filenames; the worker falls back to yt-dlp metadata when absent.
+        texts: Object.fromEntries(items.value
+          .filter(item => ids.includes(item.id) && item.text)
+          .map(item => [item.id, item.text])),
+      }),
     })
     if (!res.ok) throw new Error(await apiError(res))
     const { id } = await res.json()
