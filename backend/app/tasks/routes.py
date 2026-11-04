@@ -112,6 +112,8 @@ def _download_filename(task: dict) -> str:
                 tweet_id = str(ids[0]) if ids else ""
             except (ValueError, TypeError):
                 tweet_id = ""
+        if not tweet_id and not (task.get("title") or "").strip():
+            return f"video-{task['id']}.mp4"
         return tweet_video_stem(task.get("title"), tweet_id) + ".mp4"
     title = _FILENAME_UNSAFE.sub(" ", task.get("title") or "").strip()
     title = re.sub(r"\s+", " ", title)[:80].strip(" .")
