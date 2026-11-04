@@ -10,6 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import main as app_main
+from ..filenames import tweet_body
 from .store import DOWNLOADING, RESOLVING, TaskStore
 
 
@@ -22,13 +23,17 @@ def _execute(store: TaskStore, task: dict) -> None:
         if task["kind"] == "bookmark_batch":
             # 收藏批量：复用 bookmarks 的顺序下载与 ZIP 打包逻辑。
             from .. import bookmarks as app_bookmarks
-            ids = (json.loads(task.get("params_json") or "{}").get("ids")) or []
-            output = app_bookmarks._download_bookmarks(ids, work_dir)
+            params = json.loads(task.get("params_json") or "{}")
+            ids = params.get("ids") or []
+            output = app_bookmarks._download_bookmarks(ids, work_dir, texts=params.get("texts") or {})
+            if output.suffix == ".mp4":
+                store.set_title(task_id, output.stem)
         else:
             # 解析阶段：提取元数据（标题供文件命名）；格式匹配与降级
             # 由 download_video 在其自身的单次提取内完成，避免跨提取 ID 漂移。
             data = app_main.extract(task["url"])
-            store.set_title(task_id, str(data.get("title") or ""))
+            store.set_title(task_id, tweet_body(data) if task["platform"] == "x"
+                            else str(data.get("title") or ""))
 
             store.update_status(task_id, DOWNLOADING)
             output = app_main.download_video(
