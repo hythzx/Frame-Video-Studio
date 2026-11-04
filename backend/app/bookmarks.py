@@ -248,7 +248,11 @@ def _download_bookmarks(ids: list[str], folder: Path, texts: dict[str, str] | No
             if total + size > _MAX_ARCHIVE_BYTES:
                 raise ValueError("文件总大小超过 600 MiB 限制")
             total += size
-            body = texts.get(tweet_id) or tweet_body(info)
+            # The second yt-dlp extraction (inside download_video) may have
+            # returned a fuller post body than the earlier format probe.
+            body = texts.get(tweet_id) or tweet_body(info) or (
+                output.stem if output.name != "video.mp4" else ""
+            )
             name = tweet_video_stem(body, tweet_id) + ".mp4"
             new_path = destination / name
             if output != new_path:
