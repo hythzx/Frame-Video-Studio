@@ -18,6 +18,7 @@ from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 from .security import validate_media_url
+from .filenames import tweet_body, tweet_id_from_url, tweet_video_stem
 
 app = FastAPI(title="Frame Video Studio API", docs_url=None, redoc_url=None)
 
@@ -463,6 +464,10 @@ def download_video(url: str, format_id: str, folder: Path, platform: str) -> Pat
         raise ValueError("没有生成可下载的视频文件。")
     if output.stat().st_size > MAX_BYTES:
         raise ValueError("文件超出大小限制。")
+    if platform == "x":
+        tweet_id = tweet_id_from_url(url) or str(data.get("id") or "")
+        name = tweet_video_stem(tweet_body(data), tweet_id) + ".mp4"
+        output = output.rename(folder / name)
     return output
 
 
@@ -481,7 +486,7 @@ async def download(request: DownloadRequest):
             download_video, url, request.format_id, folder, platform)
         return FileResponse(
             output, media_type="video/mp4",
-            filename=f"video-{url.rsplit('/', 1)[-1]}.mp4",
+            filename=output.name if platform == "x" else f"video-{url.rsplit('/', 1)[-1]}.mp4",
             background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True),
         )
     except (DownloadError, ValueError) as exc:
