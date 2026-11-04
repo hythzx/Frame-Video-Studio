@@ -21,6 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from .filenames import tweet_body, tweet_video_stem, unique_video_name
 from starlette.background import BackgroundTask
 
 router = APIRouter(prefix="/api/bookmarks", tags=["bookmarks"])
@@ -222,15 +223,17 @@ async def list_bookmarks(
 
 class BookmarkDownloadRequest(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=5)
+    texts: dict[str, str] = Field(default_factory=dict, max_length=5)
 
 
-def _download_bookmarks(ids: list[str], folder: Path) -> Path:
+def _download_bookmarks(ids: list[str], folder: Path, texts: dict[str, str] | None = None) -> Path:
     # Downloads are sequential to avoid hammering X or overloading the server.
     from .main import choices, download_video, extract
 
     files = []
     failed = []
     total = 0
+    texts = texts or {}
     for tweet_id in ids:
         url = f"https://x.com/i/status/{tweet_id}"
         destination = folder / tweet_id
@@ -245,6 +248,11 @@ def _download_bookmarks(ids: list[str], folder: Path) -> Path:
             if total + size > _MAX_ARCHIVE_BYTES:
                 raise ValueError("文件总大小超过 600 MiB 限制")
             total += size
+            body = texts.get(tweet_id) or tweet_body(info)
+            name = tweet_video_stem(body, tweet_id) + ".mp4"
+            new_path = destination / name
+            if output != new_path:
+                output = output.rename(new_path)
             files.append((tweet_id, output))
         except Exception:
             # Do not include upstream errors: some error messages may contain URLs.
@@ -259,9 +267,10 @@ def _download_bookmarks(ids: list[str], folder: Path) -> Path:
         return files[0][1]
 
     archive = folder / "frame-bookmarks.zip"
+    used_names: set[str] = set()
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
         for tweet_id, output in files:
-            zf.write(output, arcname=f"x-{tweet_id}.mp4")
+            zf.write(output, arcname=unique_video_name(output.stem, used_names))
         if failed:
             zf.writestr("failed-ids.txt", "\n".join(failed) + "\n")
     return archive
@@ -275,14 +284,16 @@ async def download_bookmarks(
     ids = list(dict.fromkeys(request.ids))
     if not all(_TWEET_ID.fullmatch(x) for x in ids):
         raise HTTPException(422, "推文 ID 格式无效。")
+    if any(tweet_id not in ids or len(body) > 800 for tweet_id, body in request.texts.items()):
+        raise HTTPException(422, "推文正文参数无效。")
 
     folder = Path(tempfile.mkdtemp(prefix="frame-bookmarks-"))
     try:
-        output = await asyncio.to_thread(_download_bookmarks, ids, folder)
+        output = await asyncio.to_thread(_download_bookmarks, ids, folder, request.texts)
         single = output.suffix == ".mp4"
         return FileResponse(
             output,
-            filename=f"x-{ids[0]}.mp4" if single else "frame-bookmarks.zip",
+            filename=output.name if single else "frame-bookmarks.zip",
             media_type="video/mp4" if single else "application/zip",
             headers={"Cache-Control": "no-store"},
             background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True),
