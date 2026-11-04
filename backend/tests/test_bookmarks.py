@@ -104,7 +104,7 @@ def test_batch_archive_with_mock_downloads(monkeypatch, tmp_path):
     output = bookmarks._download_bookmarks(["1234567890", "9876543210"], tmp_path)
     assert output.suffix == ".zip"
     with zipfile.ZipFile(output) as archive:
-        assert set(archive.namelist()) == {"x-1234567890.mp4", "x-9876543210.mp4"}
+        assert set(archive.namelist()) == {"1234567890.mp4", "9876543210.mp4"}
 
 def test_fetch_page_uses_cookies_and_cursor(monkeypatch):
     import asyncio
