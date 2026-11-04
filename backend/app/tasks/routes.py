@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .store import EXPIRED, READY, TaskStore
+from ..filenames import tweet_id_from_url, tweet_video_stem
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -37,6 +38,7 @@ class TaskCreateRequest(BaseModel):
     kind: str = Field(default="video", pattern=r"^(video|audio|subtitle|bookmark_batch)$")
     format_id: str = Field(default="", max_length=120)
     ids: list[str] = Field(default_factory=list, max_length=5)
+    texts: dict[str, str] = Field(default_factory=dict, max_length=5)
 
 
 def _validate_id(task_id: str) -> str:
@@ -60,12 +62,14 @@ async def create_task(
         ids = list(dict.fromkeys(request.ids))
         if not ids or not all(_TWEET_ID_RE.fullmatch(x) for x in ids) or len(ids) > 5:
             raise HTTPException(422, "推文 ID 无效，单次最多 5 条。")
+        if any(tweet_id not in ids or len(body) > 800 for tweet_id, body in request.texts.items()):
+            raise HTTPException(422, "推文正文参数无效。")
         # 收藏批量下载涉及账号数据，创建即校验 Frame 访问密钥。
         from ..bookmarks import _require_access
         _require_access(x_frame_token)
         task = get_store().create(
             kind="bookmark_batch", url="", platform="x", format_id="",
-            idempotency_key=key, params_json=json.dumps({"ids": ids}))
+            idempotency_key=key, params_json=json.dumps({"ids": ids, "texts": request.texts}, ensure_ascii=False))
         return {"id": task["id"], "status": task["status"],
                 "status_url": f"/api/tasks/{task['id']}", "reused": task.get("reused", False)}
     if request.kind != "video":
@@ -100,6 +104,15 @@ _FILENAME_UNSAFE = re.compile(r'[\\/:*?"<>|\r\n\t]+')
 
 def _download_filename(task: dict) -> str:
     """以视频标题命名下载文件；无标题或净化后为空时回退到任务 ID。"""
+    if task.get("platform") == "x":
+        tweet_id = tweet_id_from_url(task.get("url") or "")
+        if task.get("kind") == "bookmark_batch":
+            try:
+                ids = json.loads(task.get("params_json") or "{}").get("ids") or []
+                tweet_id = str(ids[0]) if ids else ""
+            except (ValueError, TypeError):
+                tweet_id = ""
+        return tweet_video_stem(task.get("title"), tweet_id) + ".mp4"
     title = _FILENAME_UNSAFE.sub(" ", task.get("title") or "").strip()
     title = re.sub(r"\s+", " ", title)[:80].strip(" .")
     if not title:
@@ -128,7 +141,7 @@ async def task_file(task_id: str):
             ids = [task["id"]]
         if path.suffix == ".mp4":
             return FileResponse(path, media_type="video/mp4",
-                                filename=f"x-{ids[0]}.mp4")
+                                filename=_download_filename(task))
         return FileResponse(path, media_type="application/zip",
                             filename="frame-bookmarks.zip")
     return FileResponse(path, media_type="video/mp4",
