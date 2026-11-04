@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDownToLine, Check, ExternalLink, Film, LoaderCircle, RefreshCw, Youtube } from 'lucide-vue-next'
 
 const STORAGE_KEY = 'frame-youtube-channel-jobs-v1'
+const HISTORY_KEY = 'frame-youtube-channel-history-v1'
 const channelUrl = ref('')
 const section = ref('videos')
 const titleLanguage = ref('zh-CN')
@@ -16,6 +17,7 @@ const added = ref(0)
 const error = ref('')
 const notice = ref('')
 const jobs = ref({})
+const history = ref([])
 let refreshTimer
 
 const sections = [
@@ -57,6 +59,14 @@ function readJobs() {
   try { jobs.value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {} }
   catch { jobs.value = {} }
 }
+function readHistory() {
+  try { history.value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') || [] }
+  catch { history.value = [] }
+}
+function persistHistory() {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value)) }
+  catch { /* private mode or quota limits */ }
+}
 async function apiError(res) {
   try {
     const data = await res.json()
@@ -87,6 +97,8 @@ async function loadPage(reset = false) {
     items.value = items.value.concat((data.items || []).filter(x => !have.has(x.id)))
     nextStart.value = data.next_start
     channelTitle.value = data.channel_title || channelTitle.value || 'YouTube 频道'
+    // 首次进入（而非加载更多）且确实取到作品时，记入浏览历史。
+    if (reset && items.value.length && data.url) recordHistory(data.url)
     notice.value = !items.value.length ? '该栏目暂无可读取的视频，或当前网络无法访问这些作品。' : ''
   } catch (e) { error.value = e.message || '读取频道失败' }
   finally { loading.value = false }
@@ -163,9 +175,46 @@ function clearCompleted() {
   persistJobs()
 }
 
+function channelKey(canonicalUrl) {
+  // 去掉尾部栏目段，得到稳定的频道标识：同一频道切换栏目不产生重复记录。
+  return canonicalUrl.replace(/\/(videos|shorts|streams)\/?$/, '')
+}
+function formatTime(ts) {
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  const sameDay = new Date().toDateString() === d.toDateString()
+  const md = (d.getMonth() + 1) + '月' + d.getDate() + '日'
+  return (sameDay ? '' : md + ' ') + pad(d.getHours()) + ':' + pad(d.getMinutes())
+}
+function recordHistory(canonicalUrl) {
+  const key = channelKey(canonicalUrl)
+  if (!key) return
+  const entry = {
+    key, url: canonicalUrl, input: channelUrl.value.trim(),
+    title: channelTitle.value || key, section: section.value,
+    lang: titleLanguage.value, time: Date.now(),
+  }
+  history.value = [entry, ...history.value.filter(h => h.key !== key)]
+  persistHistory()
+}
+function openHistory(entry) {
+  if (loading.value) return
+  channelUrl.value = entry.input || entry.key
+  const nextSection = entry.section || 'videos'
+  const nextLang = entry.lang || 'zh-CN'
+  if (section.value === nextSection && titleLanguage.value === nextLang) loadPage(true)
+  else { section.value = nextSection; titleLanguage.value = nextLang } // watch 触发 loadPage
+}
+function removeHistory(key) {
+  history.value = history.value.filter(h => h.key !== key)
+  persistHistory()
+}
+
 watch([section, titleLanguage], () => { if (channelUrl.value.trim()) loadPage(true) })
 onMounted(() => {
   readJobs()
+  readHistory()
   refreshJobs()
   refreshTimer = setInterval(refreshJobs, 5000)
 })
@@ -190,6 +239,18 @@ onUnmounted(() => clearInterval(refreshTimer))
         {{ loading ? '读取中…' : '加载作品' }}
       </button>
     </form>
+
+    <div v-if="history.length" class="channel-history">
+      <span class="channel-history-label">浏览历史</span>
+      <div class="channel-history-list">
+        <span v-for="h in history" :key="h.key" class="channel-history-item">
+          <button type="button" class="channel-history-open" :title="h.title" @click="openHistory(h)">
+            {{ h.title || h.key }}<small v-if="h.time"> · {{ formatTime(h.time) }}</small>
+          </button>
+          <button type="button" class="channel-history-del" :aria-label="'删除历史：' + (h.title || h.key)" @click="removeHistory(h.key)">×</button>
+        </span>
+      </div>
+    </div>
 
     <div class="channel-controls">
       <div class="channel-tabs">

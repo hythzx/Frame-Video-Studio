@@ -114,6 +114,15 @@
 .channel-youtube{color:#eb6262;flex-shrink:0}
 .channel-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#e9f4ff;font-size:14px}
 .channel-search .primary-btn{flex-shrink:0;min-height:45px}
+.channel-history{display:flex;align-items:flex-start;gap:12px;margin:14px 0 0;padding:12px 14px;background:#152235;border:1px solid #2a3c51;border-radius:12px}
+.channel-history-label{flex-shrink:0;font-size:11px;color:#8ca0b4;padding-top:7px}
+.channel-history-list{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.channel-history-item{display:inline-flex;align-items:center;background:#1c2d41;border:1px solid #32445b;border-radius:8px;overflow:hidden;max-width:100%}
+.channel-history-open{background:transparent;border:0;color:#d7e6f5;font-size:12px;padding:7px 10px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;cursor:pointer}
+.channel-history-open:hover{color:#b9f68c}
+.channel-history-open small{color:#7f93a8;font-size:11px}
+.channel-history-del{flex-shrink:0;background:transparent;border:0;border-left:1px solid #32445b;color:#8ca0b4;padding:6px 9px;font-size:14px;line-height:1;cursor:pointer}
+.channel-history-del:hover{color:#ffb2b2}
 .channel-tabs{display:flex;gap:9px;flex-wrap:wrap;margin:21px 0}
 .channel-tabs button{background:#172335;color:#9dafc1;border:1px solid #32445b;border-radius:9px;padding:11px 20px;font-size:12px}
 .channel-tabs button.active{color:#b9f68c;background:#243b2a;border-color:#4b6b48}
