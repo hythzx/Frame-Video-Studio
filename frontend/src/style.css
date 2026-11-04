@@ -38,7 +38,7 @@
 .media-options p{font-size:11px;line-height:1.7;color:#8294a8;margin:3px 0 0}
 
 /* Private X bookmarks */
-.main-navigation{display:flex;gap:8px;align-items:center;margin:24px auto 0;max-width:875px;border-bottom:1px solid #2a3a4d;padding-bottom:12px}
+.main-navigation{display:flex;gap:8px;align-items:center;margin:24px auto 0;border-bottom:1px solid #2a3a4d;padding-bottom:12px}
 .main-navigation button{display:flex;align-items:center;gap:9px;background:transparent;color:#94a4b6;border:1px solid transparent;padding:12px 17px;border-radius:10px;font-size:12px;font-weight:750}
 .main-navigation button.active{background:#213324;color:#b9f68c;border-color:#3e6048}
 .bookmark-workspace{max-width:940px;margin:48px auto 100px}
