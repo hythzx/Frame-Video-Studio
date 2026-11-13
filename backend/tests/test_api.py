@@ -205,6 +205,44 @@ def test_prefer_official_cdn_replaces_mcdn():
     assert "mirrorcoso1.bilivideo.com" in v["baseUrl"]
     assert "mcdn" in a["baseUrl"]
 
+class _FakeResp:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def read(self, n=-1):
+        return self._payload if n == -1 else self._payload[:n]
+
+    def close(self):
+        pass
+
+def test_rewrite_bili_response_preserves_unrewritten_html():
+    # 回归：视频页无需改写（playinfo 无 mcdn 或缺失）时也必须返回可重读的
+    # 完整响应；此前实现把流读空后原样返回，yt-dlp 拿到空页面导致解析失败。
+    html = b"<html><script>window.__INITIAL_STATE__={}</script></html>"
+    wrapped = main._rewrite_bili_response(_FakeResp(html),
+                                          "https://www.bilibili.com/video/BV16x411o7Jn/")
+    assert wrapped.read() == html
+
+def test_rewrite_bili_response_rewrites_playinfo_mcdn():
+    html = (b'<script>window.__playinfo__={"dash":{"video":[{"baseUrl":'
+            b'"https://x.mcdn.bilivideo.cn:8082/v.m4s","backupUrl":'
+            b'["https://upos.bilivideo.com/v.m4s"]}]}}</script>')
+    wrapped = main._rewrite_bili_response(_FakeResp(html),
+                                          "https://www.bilibili.com/video/BV16x411o7Jn/")
+    body = wrapped.read()
+    assert b"upos.bilivideo.com/v.m4s" in body
+    assert b"mcdn" not in body
+
+def test_rewrite_bili_response_passthrough_other_urls():
+    resp = _FakeResp(b"irrelevant")
+    assert main._rewrite_bili_response(resp, "https://api.bilibili.com/x/other") is resp
+
+def test_rewrite_bili_response_handles_non_json_playurl():
+    payload = b"<html>gateway error</html>"
+    wrapped = main._rewrite_bili_response(_FakeResp(payload),
+                                          "https://api.bilibili.com/x/player/playurl")
+    assert wrapped.read() == payload
+
 def test_is_playurl_api_by_path():
     # 只按路径判断；下载直链的 query 含 gen=playurlv3，子串匹配会误伤 m4s 下载。
     assert main._is_playurl_api("https://api.bilibili.com/x/player/wbi/playurl?bvid=1&cid=2")

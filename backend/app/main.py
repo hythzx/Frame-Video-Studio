@@ -63,62 +63,64 @@ def _rewrite_playinfo_html(html: str) -> str:
     return html[:match.start(2)] + rewritten + html[match.end(2):]
 
 
-def _install_bili_cdn_patch() -> None:
+class _RereadResponse:
+    """替换 payload 后的只读响应包装，透传原响应的其余属性。"""
+
+    def __init__(self, resp, payload: bytes):
+        self._resp = resp
+        self._payload = payload
+        self._pos = 0
+
+    def read(self, n=-1):
+        remaining = self._payload[self._pos:]
+        if n == -1:
+            chunk = remaining
+        else:
+            chunk = remaining[:n]
+        self._pos += len(chunk)
+        return chunk
+
+    def __getattr__(self, name):
+        return getattr(self._resp, name)
+
+    def close(self):
+        self._resp.close()
+
+
+def _rewrite_bili_response(resp, url: str):
     """拦截 B 站播放数据响应，把 P2P(mcdn) 的 CDN 替换为官方备用 CDN。
 
     登录态下播放数据内嵌在视频页 HTML（window.__playinfo__），匿名时走
-    /playurl 接口，故在 YoutubeDL.urlopen（所有请求的必经之路）按响应改写。
-    无 mcdn 或结构不符时原样返回，失败模式安全。
+    /playurl 接口。read 会消耗原响应流：无论是否发生改写都必须返回可重读
+    的包装，否则 yt-dlp 拿到空页面（症状为 "Unable to extract initial
+    state"）。无 mcdn 或结构不符时原样透传，失败模式安全。
     """
+    try:
+        if "bilibili.com/video/" in url:
+            text = resp.read().decode("utf-8", "replace")
+            return _RereadResponse(resp, _rewrite_playinfo_html(text).encode())
+        if not _is_playurl_api(url):
+            return resp
+        payload = resp.read()
+        try:
+            data = json.loads(payload)
+        except ValueError:
+            return _RereadResponse(resp, payload)
+        _prefer_official_cdn(data)
+        return _RereadResponse(resp, json.dumps(data).encode())
+    except Exception:
+        return resp
 
-    class _RereadResponse:
-        """替换 payload 后的只读响应包装，透传原响应的其余属性。"""
 
-        def __init__(self, resp, payload: bytes):
-            self._resp = resp
-            self._payload = payload
-            self._pos = 0
-
-        def read(self, n=-1):
-            remaining = self._payload[self._pos:]
-            if n == -1:
-                chunk = remaining
-            else:
-                chunk = remaining[:n]
-            self._pos += len(chunk)
-            return chunk
-
-        def __getattr__(self, name):
-            return getattr(self._resp, name)
-
-        def close(self):
-            self._resp.close()
-
+def _install_bili_cdn_patch() -> None:
+    """在 YoutubeDL.urlopen（所有请求的必经之路）上安装 B 站响应改写。"""
     orig_urlopen = YoutubeDL.urlopen
 
     def patched_urlopen(self, req, *args, **kwargs):
         validate_media_url(getattr(req, "url", "") or "",
                            resolve=_dns_resolve_check_enabled(), allow_http=True)
         resp = orig_urlopen(self, req, *args, **kwargs)
-        try:
-            url = getattr(req, "url", "") or ""
-            # 登录态下播放数据内嵌在视频页 HTML（window.__playinfo__）。
-            if "bilibili.com/video/" in url:
-                text = resp.read().decode("utf-8", "replace")
-                new_text = _rewrite_playinfo_html(text)
-                if new_text != text:
-                    return _RereadResponse(resp, new_text.encode())
-                return resp
-            if not _is_playurl_api(url):
-                return resp
-            data = json.loads(resp.read())
-            _prefer_official_cdn(data)
-            dash = ((data.get("data") or {}).get("dash")) or data.get("dash")
-            if dash:
-                return _RereadResponse(resp, json.dumps(data).encode())
-            return resp
-        except Exception:
-            return resp
+        return _rewrite_bili_response(resp, getattr(req, "url", "") or "")
 
     YoutubeDL.urlopen = patched_urlopen
 
