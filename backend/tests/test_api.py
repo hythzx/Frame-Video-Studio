@@ -142,11 +142,12 @@ def test_extract_bili_fallback_failure_raises_original(monkeypatch):
     def fake_extract_once(url):
         raise yt_dlp.utils.DownloadError("original: Unable to extract initial state")
     monkeypatch.setattr(main, "_extract_once", fake_extract_once)
+    # 重试仍失败时抛 422，detail 保留原始错误文案（不掩盖真实原因）。
     try:
         main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
         assert False, "should have raised"
-    except yt_dlp.utils.DownloadError as exc:
-        assert "original" in str(exc)
+    except HTTPException as exc:
+        assert exc.status_code == 422 and "original" in str(exc.detail)
     assert main._bili_cookies_disabled is True
 
 def test_extract_no_bili_fallback_without_cookies(monkeypatch):
@@ -159,12 +160,33 @@ def test_extract_no_bili_fallback_without_cookies(monkeypatch):
         calls.append(url)
         raise yt_dlp.utils.DownloadError("boom")
     monkeypatch.setattr(main, "_extract_once", fake_extract_once)
+    # 未配置 cookie 时不降级：原始失败按既有行为转换为 422。
     try:
         main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
         assert False, "should have raised"
-    except yt_dlp.utils.DownloadError:
-        pass
+    except HTTPException as exc:
+        assert exc.status_code == 422 and "boom" in str(exc.detail)
     assert len(calls) == 1
+
+def test_extract_bili_guest_fallback_real_chain(monkeypatch):
+    # 端到端契约：mock yt-dlp 层（而非 _extract_once），验证降级重试的请求
+    # 不再携带 B 站 cookie。此前 mock _extract_once 曾掩盖其异常类型已转为
+    # HTTPException、外层降级永不触发的缺陷。
+    import yt_dlp
+    monkeypatch.setenv("BILI_COOKIES", "SESSDATA=dead; bili_jct=tok")
+    monkeypatch.setattr(main, "_bili_cookies_disabled", False)
+    seen = []
+    def fake_extract_info(self, url, download=False):
+        seen.append("SESSDATA" in {c.name for c in self.cookiejar})
+        if len(seen) == 1:
+            raise yt_dlp.utils.DownloadError(
+                "ERROR: [BiliBili] Unable to extract initial state")
+        return {"title": "guest"}
+    monkeypatch.setattr(yt_dlp.YoutubeDL, "extract_info", fake_extract_info)
+    data = main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
+    assert data["title"] == "guest"
+    assert seen == [True, False]
+    assert main._bili_cookies_disabled is True
 
 def test_prefer_official_cdn_replaces_mcdn():
     # B 站 playurl 的 base_url 常指向 P2P(mcdn) 节点，部分网络不可达；

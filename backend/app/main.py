@@ -239,36 +239,37 @@ def extract(url: str) -> dict:
             _bili_cookies_disabled = True
             try:
                 return _extract_once(url)
-            except DownloadError:
-                raise exc from exc
-        raise
+            except (DownloadError, ValueError):
+                raise HTTPException(422, f"解析失败：{str(exc)[:260]}") from exc
+        raise HTTPException(422, f"解析失败：{str(exc)[:260]}") from exc
+    except ValueError as exc:
+        raise HTTPException(422, f"解析失败：{str(exc)[:260]}") from exc
 
 
 def _extract_once(url: str) -> dict:
+    # 异常保持原始类型（DownloadError / ValueError），由 extract 统一转换为
+    # HTTPException：降级判断需要依据原始异常类型。
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "skip_download": True, "socket_timeout": 15,
         "extractor_retries": 2, "retries": 2,
         "ignoreerrors": False,
     }
-    try:
-        validate_media_url(url, resolve=_dns_resolve_check_enabled())
-        with YoutubeDL(opts) as ydl:
-            _apply_cookies(ydl)
-            data = ydl.extract_info(url, download=False)
-        if not data:
+    validate_media_url(url, resolve=_dns_resolve_check_enabled())
+    with YoutubeDL(opts) as ydl:
+        _apply_cookies(ydl)
+        data = ydl.extract_info(url, download=False)
+    if not data:
+        raise ValueError("未找到可下载的视频。")
+    if data.get("_type") == "playlist":
+        entries = [e for e in data.get("entries", []) if e]
+        if not entries:
             raise ValueError("未找到可下载的视频。")
-        if data.get("_type") == "playlist":
-            entries = [e for e in data.get("entries", []) if e]
-            if not entries:
-                raise ValueError("未找到可下载的视频。")
-            data = entries[0]
-        duration = data.get("duration")
-        if duration and duration > MAX_DURATION:
-            raise ValueError("视频时长超过服务限制。")
-        return data
-    except (DownloadError, ValueError) as exc:
-        raise HTTPException(422, f"解析失败：{str(exc)[:260]}") from exc
+        data = entries[0]
+    duration = data.get("duration")
+    if duration and duration > MAX_DURATION:
+        raise ValueError("视频时长超过服务限制。")
+    return data
 
 
 def _twitter_choices(data: dict) -> list:
