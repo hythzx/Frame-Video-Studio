@@ -107,6 +107,65 @@ def test_cookies_applied_to_ydl(monkeypatch):
     assert injected.get("SESSDATA") == "xyz"
     assert injected.get("bili_jct") == "tok"
 
+def test_apply_cookies_skips_bili_when_disabled(monkeypatch):
+    # B 站 cookie 被服务端吊销后（降级标记置位），请求不再携带 BILI_COOKIES。
+    monkeypatch.setenv("BILI_COOKIES", "SESSDATA=xyz; bili_jct=tok")
+    monkeypatch.setattr(main, "_bili_cookies_disabled", True)
+    from yt_dlp import YoutubeDL
+    with YoutubeDL({"quiet": True}) as ydl:
+        main._apply_cookies(ydl)
+        assert "SESSDATA" not in {c.name for c in ydl.cookiejar}
+
+def test_extract_bili_guest_fallback(monkeypatch):
+    # 带（已失效）cookie 解析失败时应停用 B 站 cookie 并以游客模式重试一次。
+    import yt_dlp
+    monkeypatch.setenv("BILI_COOKIES", "SESSDATA=dead; bili_jct=tok")
+    monkeypatch.setattr(main, "_bili_cookies_disabled", False)
+    calls = []
+    def fake_extract_once(url):
+        calls.append(main._bili_cookies_disabled)
+        if len(calls) == 1:
+            raise yt_dlp.utils.DownloadError(
+                "ERROR: [BiliBili] Unable to extract initial state")
+        return {"title": "guest"}
+    monkeypatch.setattr(main, "_extract_once", fake_extract_once)
+    data = main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
+    assert data["title"] == "guest"
+    assert calls == [False, True]
+    assert main._bili_cookies_disabled is True
+
+def test_extract_bili_fallback_failure_raises_original(monkeypatch):
+    # 游客模式重试仍失败时抛出原始错误，不掩盖真实原因。
+    import yt_dlp
+    monkeypatch.setenv("BILI_COOKIES", "SESSDATA=dead")
+    monkeypatch.setattr(main, "_bili_cookies_disabled", False)
+    def fake_extract_once(url):
+        raise yt_dlp.utils.DownloadError("original: Unable to extract initial state")
+    monkeypatch.setattr(main, "_extract_once", fake_extract_once)
+    try:
+        main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
+        assert False, "should have raised"
+    except yt_dlp.utils.DownloadError as exc:
+        assert "original" in str(exc)
+    assert main._bili_cookies_disabled is True
+
+def test_extract_no_bili_fallback_without_cookies(monkeypatch):
+    # 未配置 BILI_COOKIES 时不做降级重试，失败直接上抛。
+    import yt_dlp
+    monkeypatch.delenv("BILI_COOKIES", raising=False)
+    monkeypatch.setattr(main, "_bili_cookies_disabled", False)
+    calls = []
+    def fake_extract_once(url):
+        calls.append(url)
+        raise yt_dlp.utils.DownloadError("boom")
+    monkeypatch.setattr(main, "_extract_once", fake_extract_once)
+    try:
+        main.extract("https://www.bilibili.com/video/BV16x411o7Jn/")
+        assert False, "should have raised"
+    except yt_dlp.utils.DownloadError:
+        pass
+    assert len(calls) == 1
+
 def test_prefer_official_cdn_replaces_mcdn():
     # B 站 playurl 的 base_url 常指向 P2P(mcdn) 节点，部分网络不可达；
     # 应替换为 backupUrl 中的官方 CDN，无可用 backup 时保持原样。

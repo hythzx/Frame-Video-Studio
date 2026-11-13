@@ -210,15 +210,41 @@ def _apply_cookies(ydl) -> None:
 
     新版 yt-dlp 已不支持 cookiejar 选项，只能在构造后写入其全局 jar。
     """
-    for jar in (_twitter_cookie_jar(),
-                _cookie_jar_from_env("BILI_COOKIES", BILI_COOKIE_DOMAINS)):
+    jars = [_twitter_cookie_jar()]
+    if not _bili_cookies_disabled:
+        jars.append(_cookie_jar_from_env("BILI_COOKIES", BILI_COOKIE_DOMAINS))
+    for jar in jars:
         if jar is None:
             continue
         for cookie in jar:
             ydl.cookiejar.set_cookie(cookie)
 
 
+# B 站登录 cookie 被服务端吊销后的降级标记：携带已失效 SESSDATA 会命中风控页
+# （页面缺少初始状态数据）导致解析彻底失败，而游客模式可正常解析。置位后请求
+# 不再携带 B 站 cookie；进程重启后重新探测，更换新 cookie 同样以重启生效。
+_bili_cookies_disabled = False
+
+
 def extract(url: str) -> dict:
+    try:
+        return _extract_once(url)
+    except DownloadError as exc:
+        global _bili_cookies_disabled
+        # 仅对配置过 B 站 cookie 的 B 站请求做游客模式降级重试；重试仍失败
+        # 时向上抛出原始错误，避免掩盖真实原因。
+        if ("bilibili.com" in url
+                and not _bili_cookies_disabled
+                and _cookie_jar_from_env("BILI_COOKIES", BILI_COOKIE_DOMAINS)):
+            _bili_cookies_disabled = True
+            try:
+                return _extract_once(url)
+            except DownloadError:
+                raise exc from exc
+        raise
+
+
+def _extract_once(url: str) -> dict:
     opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "skip_download": True, "socket_timeout": 15,
